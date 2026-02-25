@@ -190,6 +190,9 @@ def summarize(
     heavy_gate_pass = 0
     heavy_gate_missing = 0
     heavy_gate_fail = 0
+    review_reason_counts: dict[str, int] = {}
+    review_schema_complete_count = 0
+    review_fail_then_pass_count = 0
 
     for row in tasks:
         status = str(row["status"])
@@ -216,18 +219,35 @@ def summarize(
 
         if route == "UBUNTU_HEAVY":
             heavy_task_count += 1
-            review_path = metadata.get("context_compacted_path")
+            review_path = (
+                Path("storage/tasks") / str(row["task_id"]) / "artifacts/reviewer.json"
+            )
             reviewer_status = "missing"
-            if review_path:
-                reviewer_json = Path(str(review_path)).with_name("reviewer.json")
-                if reviewer_json.exists():
-                    try:
-                        payload = json.loads(reviewer_json.read_text(encoding="utf-8"))
-                        reviewer_status = (
-                            str(payload.get("verdict", "missing")).lower().strip()
+            if review_path.exists():
+                try:
+                    payload = json.loads(review_path.read_text(encoding="utf-8"))
+                    reviewer_status = (
+                        str(payload.get("verdict", "missing")).lower().strip()
+                    )
+                    reason_code = str(payload.get("reason_code", "") or "")
+                    if reason_code:
+                        review_reason_counts[reason_code] = (
+                            review_reason_counts.get(reason_code, 0) + 1
                         )
-                    except json.JSONDecodeError:
-                        reviewer_status = "invalid"
+                    checklist = payload.get("checklist", {})
+                    if isinstance(checklist, dict) and all(
+                        isinstance(checklist.get(k), bool)
+                        for k in (
+                            "policy_safety",
+                            "correctness",
+                            "tests",
+                            "rollback",
+                            "approval_constraints",
+                        )
+                    ):
+                        review_schema_complete_count += 1
+                except json.JSONDecodeError:
+                    reviewer_status = "invalid"
             if reviewer_status == "pass":
                 heavy_gate_pass += 1
             elif reviewer_status == "fail":
@@ -253,12 +273,18 @@ def summarize(
 
     pending_ts: dict[str, datetime] = {}
     gate_latency_minutes: list[float] = []
+    review_timeline: dict[str, list[str]] = {}
     for row in review_events:
         task_id = str(row["task_id"])
         detail = str(row["detail"])
         ts = parse_ts(str(row["created_at"]))
         if not ts:
             continue
+        if detail.startswith("reviewer_artifact_recorded verdict="):
+            if "verdict=fail" in detail:
+                review_timeline.setdefault(task_id, []).append("fail")
+            elif "verdict=pass" in detail:
+                review_timeline.setdefault(task_id, []).append("pass")
         if detail == "review_gate_pending":
             pending_ts[task_id] = ts
             continue
@@ -269,6 +295,14 @@ def summarize(
             start = pending_ts[task_id]
             if ts >= start:
                 gate_latency_minutes.append((ts - start).total_seconds() / 60.0)
+
+    for timeline in review_timeline.values():
+        if (
+            "fail" in timeline
+            and "pass" in timeline
+            and timeline.index("fail") < timeline.index("pass")
+        ):
+            review_fail_then_pass_count += 1
 
     command_counts: dict[str, int] = {}
     command_status_counts: dict[str, dict[str, int]] = {}
@@ -318,6 +352,14 @@ def summarize(
             "gate_pass_count": heavy_gate_pass,
             "gate_fail_count": heavy_gate_fail,
             "gate_missing_count": heavy_gate_missing,
+            "review_reason_counts": review_reason_counts,
+            "review_schema_complete_count": review_schema_complete_count,
+            "review_schema_complete_rate": round(
+                review_schema_complete_count / heavy_task_count, 4
+            )
+            if heavy_task_count
+            else 0,
+            "fail_then_pass_count": review_fail_then_pass_count,
             "gate_pass_rate": round(heavy_gate_pass / heavy_task_count, 4)
             if heavy_task_count
             else 0,
@@ -380,6 +422,11 @@ def recommendations(summary: dict[str, Any]) -> list[str]:
             "Improve planner/reviewer quality: increase gate pass rate above 80%."
         )
 
+    if float(summary["review_gate"]["review_schema_complete_rate"]) < 0.9:
+        out.append(
+            "Enforce complete reviewer checklist schema on all heavy-task reviews."
+        )
+
     if float(summary["telegram"]["error_rate"]) > 0.1:
         out.append(
             "Reduce Telegram command error rate with stricter input validation/help hints."
@@ -434,7 +481,10 @@ def render_markdown(
         f"- Approval latency: median={approvals['median_approval_latency_minutes']}m p90={approvals['p90_approval_latency_minutes']}m"
     )
     lines.append(
-        f"- Review gate: pass_rate={gate['gate_pass_rate']} pass={gate['gate_pass_count']} fail={gate['gate_fail_count']} missing={gate['gate_missing_count']}"
+        "- Review gate: "
+        f"pass_rate={gate['gate_pass_rate']} pass={gate['gate_pass_count']} fail={gate['gate_fail_count']} "
+        f"missing={gate['gate_missing_count']} schema_complete_rate={gate['review_schema_complete_rate']} "
+        f"fail_then_pass={gate['fail_then_pass_count']}"
     )
     lines.append(
         f"- Telemetry: avg_dispatch_ms={telemetry['avg_dispatch_duration_ms']} total_cost_usd={telemetry['total_estimated_cost_usd']} total_tokens={telemetry['total_estimated_tokens']}"

@@ -9,7 +9,7 @@ Source of truth for service command behavior: `services/telegram-control/command
 - `/list [limit]`
 - `/approve <task_id> <action>`
 - `/plan <task_id> <summary>`
-- `/review <task_id> <pass|fail> [notes]`
+- `/review <task_id> <pass|fail> [reason_code_if_fail] [notes]`
 - `/resume <task_id>`
 - `/stop <task_id>`
 - `/board`
@@ -22,3 +22,4 @@ Source of truth for service command behavior: `services/telegram-control/command
 - All high-risk actions require approval gate checks.
 - Approved actions resume blocked tasks; rejected actions cancel blocked tasks.
 - `UBUNTU_HEAVY` tasks require planner/reviewer artifacts (review verdict `pass`) before resume.
+- Reviewer fail reason codes: `policy_conflict`, `missing_tests`, `insufficient_plan`, `high_risk_unmitigated`, `artifact_incomplete`, `other`.

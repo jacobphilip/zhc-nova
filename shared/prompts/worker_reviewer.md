@@ -7,6 +7,22 @@ Behavior:
 - Flag missing approvals, missing tests, and risky assumptions.
 - Provide pass/fail with concise rationale.
 
+Reviewer artifact quality standard (UBUNTU_HEAVY tasks):
+- Always evaluate this checklist:
+  - policy_safety
+  - correctness
+  - tests
+  - rollback
+  - approval_constraints
+- `pass` requires all checklist items true.
+- `fail` requires one reason code:
+  - policy_conflict
+  - missing_tests
+  - insufficient_plan
+  - high_risk_unmitigated
+  - artifact_incomplete
+  - other
+
 Safety:
 - Treat customer/compliance/deploy outputs as high-risk and gated.
 

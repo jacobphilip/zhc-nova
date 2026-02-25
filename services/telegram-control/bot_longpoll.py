@@ -377,10 +377,40 @@ def handle_command(
 
     if cmd == "/review":
         if len(args) < 2:
-            raise ValueError("Usage: /review <task_id> <pass|fail> [notes]")
+            raise ValueError(
+                "Usage: /review <task_id> <pass|fail> [reason_code_if_fail] [notes]"
+            )
         task_id = args[0]
         verdict = args[1].lower()
-        notes = " ".join(args[2:]) if len(args) > 2 else ""
+        reason_code = ""
+        notes_start_idx = 2
+        if verdict == "fail":
+            if len(args) < 3:
+                raise ValueError(
+                    "Fail review requires reason code: policy_conflict|missing_tests|insufficient_plan|high_risk_unmitigated|artifact_incomplete|other"
+                )
+            reason_code = args[2].lower()
+            notes_start_idx = 3
+        notes = " ".join(args[notes_start_idx:]) if len(args) > notes_start_idx else ""
+
+        if verdict == "pass":
+            checklist = {
+                "policy_safety": True,
+                "correctness": True,
+                "tests": True,
+                "rollback": True,
+                "approval_constraints": True,
+            }
+        else:
+            checklist = {
+                "policy_safety": reason_code
+                not in {"policy_conflict", "high_risk_unmitigated"},
+                "correctness": reason_code != "insufficient_plan",
+                "tests": reason_code != "missing_tests",
+                "rollback": reason_code != "artifact_incomplete",
+                "approval_constraints": reason_code != "policy_conflict",
+            }
+
         result = router_cmd(
             [
                 "record-review",
@@ -390,12 +420,27 @@ def handle_command(
                 actor,
                 "--verdict",
                 verdict,
+                "--reason-code",
+                reason_code,
+                "--checklist-json",
+                json.dumps(checklist),
                 "--notes",
                 notes,
             ],
             config.command_timeout_seconds,
         )
-        return f"Review recorded for {task_id}: {verdict}", result
+        if verdict == "fail":
+            return (
+                (
+                    f"Review recorded for {task_id}: fail ({reason_code}). "
+                    f"{result.get('next_action', 'Fix issues then submit /review pass.')}"
+                ),
+                result,
+            )
+        return (
+            f"Review recorded for {task_id}: pass. {result.get('next_action', '')}".strip(),
+            result,
+        )
 
     if cmd == "/resume":
         if len(args) != 1:

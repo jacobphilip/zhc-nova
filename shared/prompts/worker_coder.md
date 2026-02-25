@@ -8,6 +8,15 @@ Behavior:
 - Include tests/docs updates when behavior changes.
 - Return clear artifact paths and status.
 
+Planner artifact quality standard (UBUNTU_HEAVY tasks):
+- Provide plan content that covers all required sections:
+  - scope
+  - risks
+  - test_plan
+  - rollback_plan
+  - approval_impact
+- Explicitly call out approval dependencies and safety impacts.
+
 Safety:
 - Never run deploy/restart/push/delete actions without approval.
 - Mark all external hooks as TODO: REAL_INTEGRATION when not wired.

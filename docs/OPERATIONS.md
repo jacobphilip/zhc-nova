@@ -29,7 +29,10 @@ python3 services/task-router/router.py approve --task-id <task_id> --action-cate
 
 # Record planner/reviewer artifacts for UBUNTU_HEAVY task
 python3 services/task-router/router.py record-plan --task-id <task_id> --author planner --summary "Plan steps and risks"
-python3 services/task-router/router.py record-review --task-id <task_id> --reviewer reviewer --verdict pass --notes "Looks safe"
+python3 services/task-router/router.py record-review --task-id <task_id> --reviewer reviewer --verdict pass --checklist-json '{"policy_safety":true,"correctness":true,"tests":true,"rollback":true,"approval_constraints":true}' --notes "Looks safe"
+
+# Fail review with taxonomy reason code
+python3 services/task-router/router.py record-review --task-id <task_id> --reviewer reviewer --verdict fail --reason-code missing_tests --checklist-json '{"policy_safety":true,"correctness":true,"tests":false,"rollback":true,"approval_constraints":true}' --notes "Add test coverage first"
 
 # Resume blocked task after gates are satisfied
 python3 services/task-router/router.py resume --task-id <task_id> --requested-by jacob
@@ -86,7 +89,7 @@ python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
 
 - Every `UBUNTU_HEAVY` task is blocked until both artifacts exist:
   - `storage/tasks/<task_id>/artifacts/planner.md`
-  - `storage/tasks/<task_id>/artifacts/reviewer.json` with verdict `pass`
+  - `storage/tasks/<task_id>/artifacts/reviewer.json` with verdict `pass` and complete checklist
 - High-risk tasks may require both human approval and planner/reviewer gate before dispatch.
 
 ## Telemetry

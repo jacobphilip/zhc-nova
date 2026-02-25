@@ -16,10 +16,12 @@ Run this checklist after deploy/restart of Telegram runtime.
 4. `/newtask code_refactor smoke heavy`
 5. `/approve <heavy_task_id> supervised_heavy_execution approved`
 6. `/plan <heavy_task_id> smoke test plan`
-7. `/review <heavy_task_id> pass smoke review`
-8. `/resume <heavy_task_id>`
-9. `/board`
-10. `/stop <task_id_if_non_terminal>`
+7. `/review <heavy_task_id> fail missing_tests add tests first`
+8. `/resume <heavy_task_id>` (expect blocked with review_failed reason)
+9. `/review <heavy_task_id> pass smoke review`
+10. `/resume <heavy_task_id>`
+11. `/board`
+12. `/stop <task_id_if_non-terminal>`
 
 ## Verify
 

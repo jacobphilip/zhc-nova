@@ -22,6 +22,21 @@ from typing import Any
 
 
 VALID_AUTONOMY_MODES = {"readonly", "supervised", "auto"}
+VALID_REVIEW_FAIL_CODES = {
+    "policy_conflict",
+    "missing_tests",
+    "insufficient_plan",
+    "high_risk_unmitigated",
+    "artifact_incomplete",
+    "other",
+}
+REVIEW_CHECKLIST_KEYS = (
+    "policy_safety",
+    "correctness",
+    "tests",
+    "rollback",
+    "approval_constraints",
+)
 
 
 def utc_now() -> str:
@@ -413,12 +428,19 @@ def review_gate_status(task_id: str) -> dict[str, Any]:
     reviewer_present = reviewer_path.exists()
     reviewer_passed = False
     reviewer_verdict = "missing"
+    reviewer_reason_code = ""
+    checklist_complete = False
 
     if reviewer_present:
         try:
             payload = json.loads(reviewer_path.read_text(encoding="utf-8"))
             reviewer_verdict = str(payload.get("verdict", "missing")).lower().strip()
-            reviewer_passed = reviewer_verdict == "pass"
+            reviewer_reason_code = str(payload.get("reason_code", "")).strip()
+            checklist = payload.get("checklist", {})
+            checklist_complete = isinstance(checklist, dict) and all(
+                isinstance(checklist.get(k), bool) for k in REVIEW_CHECKLIST_KEYS
+            )
+            reviewer_passed = reviewer_verdict == "pass" and checklist_complete
         except json.JSONDecodeError:
             reviewer_verdict = "invalid"
             reviewer_passed = False
@@ -428,6 +450,8 @@ def review_gate_status(task_id: str) -> dict[str, Any]:
         "planner_present": planner_present,
         "reviewer_present": reviewer_present,
         "reviewer_verdict": reviewer_verdict,
+        "reviewer_reason_code": reviewer_reason_code,
+        "checklist_complete": checklist_complete,
         "gate_passed": gate_passed,
     }
 
@@ -441,8 +465,20 @@ def write_planner_artifact(task_id: str, author: str, summary: str) -> Path:
                 f"author: {author}",
                 f"created_at: {utc_now()}",
                 "",
-                "plan:",
+                "scope:",
                 summary,
+                "",
+                "risks:",
+                "- TODO: identify primary risks and mitigations",
+                "",
+                "test_plan:",
+                "- TODO: define validation/tests",
+                "",
+                "rollback_plan:",
+                "- TODO: define rollback procedure",
+                "",
+                "approval_impact:",
+                "- TODO: list required approvals and checkpoints",
                 "",
             ]
         ),
@@ -455,6 +491,8 @@ def write_reviewer_artifact(
     task_id: str,
     reviewer: str,
     verdict: str,
+    reason_code: str,
+    checklist: dict[str, bool],
     notes: str,
 ) -> Path:
     path = reviewer_artifact_path(task_id)
@@ -462,6 +500,8 @@ def write_reviewer_artifact(
     payload = {
         "reviewer": reviewer,
         "verdict": verdict,
+        "reason_code": reason_code,
+        "checklist": checklist,
         "notes": notes,
         "created_at": utc_now(),
     }
@@ -688,7 +728,13 @@ def dispatch_blockers(task: dict[str, Any]) -> list[str]:
     if task.get("route_class") == "UBUNTU_HEAVY":
         gate = review_gate_status(task["task_id"])
         if not gate["gate_passed"]:
-            blockers.append("planner_reviewer_gate")
+            if gate["reviewer_verdict"] == "fail":
+                code = gate["reviewer_reason_code"] or "unspecified"
+                blockers.append(f"review_failed:{code}")
+            elif gate["reviewer_verdict"] == "pass" and not gate["checklist_complete"]:
+                blockers.append("review_incomplete_checklist")
+            else:
+                blockers.append("planner_reviewer_gate")
 
     if task.get("requires_approval"):
         approvals = task.get("approvals", [])
@@ -703,6 +749,13 @@ def dispatch_task_if_ready(
 ) -> dict[str, Any]:
     blockers = dispatch_blockers(task)
     if blockers:
+        hint = ""
+        if any(b.startswith("review_failed:") for b in blockers):
+            hint = (
+                " Use /review <task_id> pass <notes> after fixing reviewer fail reason."
+            )
+        elif "planner_reviewer_gate" in blockers:
+            hint = " Record /plan and /review artifacts before resume."
         append_task_event(
             task["task_id"],
             f"resume_blocked pending={','.join(blockers)}",
@@ -714,7 +767,7 @@ def dispatch_task_if_ready(
             "autonomy_mode": mode,
             "pending": blockers,
             "review_gate": review_gate_status(task["task_id"]),
-            "message": f"Task remains blocked pending: {', '.join(blockers)}",
+            "message": f"Task remains blocked pending: {', '.join(blockers)}.{hint}",
         }
 
     context_payload, retrieval_sources = build_context_payload(task, db_path)
@@ -855,7 +908,12 @@ def record_plan(task_id: str, author: str, summary: str) -> dict[str, Any]:
 
 
 def record_review(
-    task_id: str, reviewer: str, verdict: str, notes: str
+    task_id: str,
+    reviewer: str,
+    verdict: str,
+    reason_code: str,
+    checklist_json: str,
+    notes: str,
 ) -> dict[str, Any]:
     db_path = Path(
         os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
@@ -866,17 +924,55 @@ def record_review(
     verdict_l = verdict.strip().lower()
     if verdict_l not in {"pass", "fail"}:
         raise ValueError("verdict must be one of: pass, fail")
-    artifact = write_reviewer_artifact(task_id, reviewer, verdict_l, notes)
+    reason_code_l = reason_code.strip().lower()
+    if verdict_l == "fail" and reason_code_l not in VALID_REVIEW_FAIL_CODES:
+        allowed = ", ".join(sorted(VALID_REVIEW_FAIL_CODES))
+        raise ValueError(f"reason_code required for fail verdict. Allowed: {allowed}")
+    if verdict_l == "pass":
+        reason_code_l = ""
+
+    try:
+        checklist_raw = json.loads(checklist_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"checklist_json must be valid JSON: {exc}") from exc
+    if not isinstance(checklist_raw, dict):
+        raise ValueError("checklist_json must decode to object")
+
+    checklist: dict[str, bool] = {}
+    for key in REVIEW_CHECKLIST_KEYS:
+        val = checklist_raw.get(key)
+        checklist[key] = bool(val) if isinstance(val, bool) else False
+
+    if verdict_l == "pass" and not all(checklist.values()):
+        raise ValueError("pass verdict requires all checklist values to be true")
+
+    artifact = write_reviewer_artifact(
+        task_id,
+        reviewer,
+        verdict_l,
+        reason_code_l,
+        checklist,
+        notes,
+    )
     append_task_event(
         task_id,
-        f"reviewer_artifact_recorded verdict={verdict_l} path={artifact}",
+        (
+            f"reviewer_artifact_recorded verdict={verdict_l} "
+            f"reason_code={reason_code_l or 'none'} path={artifact}"
+        ),
         db_path,
     )
     return {
         "task_id": task_id,
         "artifact": str(artifact),
+        "reason_code": reason_code_l,
         "review_gate": review_gate_status(task_id),
         "message": "Reviewer artifact recorded",
+        "next_action": (
+            "Fix issues then submit pass review"
+            if verdict_l == "fail"
+            else "Resume task once other gates are satisfied"
+        ),
     }
 
 
@@ -1022,6 +1118,8 @@ def parse_args() -> argparse.Namespace:
     review_parser.add_argument("--task-id", required=True)
     review_parser.add_argument("--reviewer", required=True)
     review_parser.add_argument("--verdict", choices=["pass", "fail"], required=True)
+    review_parser.add_argument("--reason-code", default="")
+    review_parser.add_argument("--checklist-json", default="{}")
     review_parser.add_argument("--notes", default="")
 
     resume_parser = sub.add_parser(
@@ -1115,6 +1213,8 @@ def main() -> int:
                 task_id=args.task_id,
                 reviewer=args.reviewer,
                 verdict=args.verdict,
+                reason_code=args.reason_code,
+                checklist_json=args.checklist_json,
                 notes=args.notes,
             )
             print(json.dumps(result, indent=2, sort_keys=True))

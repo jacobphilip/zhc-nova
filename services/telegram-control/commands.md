@@ -42,14 +42,26 @@ Example:
 
 `/plan <task_id> <summary>`
 
-- Records planner artifact for `UBUNTU_HEAVY` tasks.
+- Records planner artifact for `UBUNTU_HEAVY` tasks using a structured template:
+  - scope
+  - risks
+  - test_plan
+  - rollback_plan
+  - approval_impact
 
 ## /review
 
-`/review <task_id> <pass|fail> [notes]`
+`/review <task_id> <pass|fail> [reason_code_if_fail] [notes]`
 
 - Records reviewer artifact and verdict for `UBUNTU_HEAVY` tasks.
 - `pass` is required before heavy task can resume.
+- `fail` requires reason code:
+  - `policy_conflict`
+  - `missing_tests`
+  - `insufficient_plan`
+  - `high_risk_unmitigated`
+  - `artifact_incomplete`
+  - `other`
 
 ## /resume
 
