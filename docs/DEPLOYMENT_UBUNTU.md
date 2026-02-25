@@ -28,7 +28,8 @@ Set or confirm in `.env`:
 - `ZHC_CONTEXT_TOKEN_BUDGET` and `ZHC_CONTEXT_TOKEN_BUDGET_HEAVY`
 - `ZHC_CONTEXT_TARGET_RATIO`
 - `ZHC_COST_LOOKUP_ENABLED`, `ZHC_COST_LOOKUP_TIMEOUT_MS`, `ZHC_COST_MODEL_DEFAULT`, `OPENROUTER_API_KEY`
-- `ZHC_ENABLE_REAL_OPENCODE=1` only when real OpenCode command integration is ready
+- `ZHC_ENABLE_REAL_OPENCODE=1` to enable real one-shot OpenCode execution
+- `ZHC_DEFAULT_PROVIDER`/`ZHC_DEFAULT_MODEL` must reference a valid model (example: `openai` + `gpt-5-codex`)
 
 ## Single-Node Mode (recommended first)
 
@@ -62,5 +63,4 @@ python3 services/task-router/router.py route --task-type code_review --prompt "R
 
 ## TODO Integration Hooks
 
-- TODO: REAL_INTEGRATION - OpenCode non-interactive command contract.
 - TODO: REAL_INTEGRATION - Telegram service startup process.

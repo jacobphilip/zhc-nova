@@ -4,17 +4,17 @@
     "Improve planner/reviewer quality: increase gate pass rate above 80%.",
     "Enforce complete reviewer checklist schema on all heavy-task reviews."
   ],
-  "generated_at": "2026-02-25T17:14:00.031898+00:00",
+  "generated_at": "2026-02-25T17:42:34.817919+00:00",
   "iteration": "2026-02-25-v1.1",
   "summary": {
     "approvals": {
       "approval_status_counts": {
-        "approved": 10,
+        "approved": 13,
         "rejected": 1,
-        "required": 2
+        "required": 3
       },
-      "median_approval_latency_minutes": 0.01,
-      "p90_approval_latency_minutes": 0.5
+      "median_approval_latency_minutes": 0.1,
+      "p90_approval_latency_minutes": 0.51
     },
     "policy": {
       "policy_block_count": 3,
@@ -25,115 +25,120 @@
       }
     },
     "review_gate": {
-      "fail_then_pass_count": 3,
-      "gate_fail_count": 0,
+      "fail_then_pass_count": 4,
+      "gate_fail_count": 1,
       "gate_missing_count": 4,
-      "gate_pass_count": 9,
-      "gate_pass_rate": 0.6923,
-      "heavy_task_count": 13,
-      "median_gate_latency_minutes": 0.01,
-      "p90_gate_latency_minutes": 1.6,
-      "review_reason_counts": {},
-      "review_schema_complete_count": 6,
-      "review_schema_complete_rate": 0.4615
+      "gate_pass_count": 12,
+      "gate_pass_rate": 0.7059,
+      "heavy_task_count": 17,
+      "median_gate_latency_minutes": 0.21,
+      "p90_gate_latency_minutes": 1.88,
+      "review_reason_counts": {
+        "missing_tests": 1
+      },
+      "review_schema_complete_count": 10,
+      "review_schema_complete_rate": 0.5882
     },
     "task_flow": {
       "risk_counts": {
         "high": 3,
         "low": 22,
-        "medium": 12
+        "medium": 16
       },
       "route_counts": {
         "PI_LIGHT": 24,
-        "UBUNTU_HEAVY": 13
+        "UBUNTU_HEAVY": 17
       },
       "status_counts": {
-        "blocked": 8,
+        "blocked": 9,
         "cancelled": 1,
         "failed": 8,
-        "succeeded": 20
+        "succeeded": 23
       },
-      "task_count": 37
+      "task_count": 41
     },
     "telegram": {
-      "command_count": 30,
+      "command_count": 54,
       "command_counts": {
-        "/approve": 2,
-        "/board": 2,
+        "/approve": 5,
+        "/board": 4,
         "/help": 2,
-        "/list": 2,
-        "/newtask": 6,
-        "/plan": 2,
-        "/resume": 4,
-        "/review": 4,
+        "/list": 3,
+        "/newtask": 9,
+        "/plan": 5,
+        "/resume": 8,
+        "/review": 8,
         "/rsume": 1,
-        "/start": 3,
-        "/status": 2
+        "/start": 4,
+        "/status": 5
       },
       "command_status_counts": {
         "/approve": {
-          "ok": 2
+          "ok": 5
         },
         "/board": {
-          "ok": 2
+          "ok": 4
         },
         "/help": {
           "ok": 2
         },
         "/list": {
-          "ok": 2
+          "ok": 3
         },
         "/newtask": {
-          "ok": 6
+          "ok": 9
         },
         "/plan": {
-          "ok": 2
+          "ok": 5
         },
         "/resume": {
-          "ok": 4
+          "command_timeout": 1,
+          "ok": 7
         },
         "/review": {
-          "ok": 4
+          "ok": 8
         },
         "/rsume": {
           "error": 1
         },
         "/start": {
           "error": 1,
-          "ok": 2
+          "ok": 3
         },
         "/status": {
-          "ok": 2
+          "error": 1,
+          "ok": 4
         }
       },
-      "command_timeout_count": 0,
-      "error_rate": 0.0588,
+      "command_timeout_count": 1,
+      "error_rate": 0.0656,
       "poll_error_count": 0,
       "status_counts": {
-        "error": 2,
-        "ok": 28,
-        "startup": 4
+        "command_timeout": 1,
+        "error": 3,
+        "ok": 50,
+        "startup": 7
       },
-      "success_rate": 0.8235,
+      "success_rate": 0.8197,
       "unauthorized_count": 0
     },
     "telemetry": {
-      "avg_compression_ratio": 0.6841,
-      "avg_dispatch_duration_ms": 10.19,
-      "avg_estimated_cost_usd": 0.00166,
-      "avg_estimated_tokens": 105.81,
+      "avg_compression_ratio": 0.6817,
+      "avg_dispatch_duration_ms": 6533.83,
+      "avg_estimated_cost_usd": 0.001498,
+      "avg_estimated_tokens": 110.29,
       "cost_source_counts": {
         "heuristic": 7,
-        "openrouter_api": 13,
-        "unknown": 17
+        "openrouter_api": 16,
+        "unknown": 18
       },
-      "p90_dispatch_duration_ms": 27.0,
+      "p90_dispatch_duration_ms": 1146.0,
       "total_estimated_cost_usd": 0.061409,
-      "total_estimated_tokens": 3915
+      "total_estimated_tokens": 4522
     }
   },
   "window": {
-    "end": "2026-02-25T17:14:00.027534+00:00",
-    "start": "2026-02-18T17:14:00.027534+00:00"
+    "end": "2026-02-25T17:42:34.814110+00:00",
+    "start": "2026-02-18T17:42:34.814110+00:00"
   }
 }

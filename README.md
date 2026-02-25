@@ -20,7 +20,7 @@ This repository is a v1 foundation focused on safe routing, explicit approval ga
 - Stubbed integrations:
   - Telegram webhook mode (long-polling already implemented)
   - Real ZeroClaw runtime execution wiring
-  - Real OpenCode automation command contract (guarded via TODO markers)
+  - Deep OpenCode automation contract hardening (one-shot execution is implemented)
 
 ## Architecture (v1)
 

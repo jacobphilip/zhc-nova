@@ -16,7 +16,14 @@
 
 - Symptom: output says stub run
 - Check: `ZHC_ENABLE_REAL_OPENCODE=1` and `opencode` in PATH
-- Fix: authenticate OpenCode, then rerun
+- Check: `ZHC_DEFAULT_PROVIDER` + `ZHC_DEFAULT_MODEL` map to a valid model (ex: `openai/gpt-5-codex`)
+- Fix: authenticate OpenCode, set valid model, then rerun
+
+## OpenCode Model Not Found
+
+- Symptom: `Model not found: openai/codex`
+- Check: `opencode models openai` for available model IDs
+- Fix: set `ZHC_DEFAULT_MODEL` to an available value (for example `gpt-5-codex`)
 
 ## Task Stuck in Running
 

@@ -128,9 +128,13 @@ if [[ "${ZHC_ENABLE_REAL_OPENCODE:-0}" == "1" ]]; then
     exit 1
   fi
 
-  # TODO: REAL_INTEGRATION - finalize opencode command flags and artifact contract.
+  # Uses non-interactive one-shot execution path.
   set +e
-  opencode "$PROMPT" >"$STDOUT_LOG" 2>"$STDERR_LOG"
+  if [[ -n "$REPO_PATH" ]]; then
+    opencode run --print-logs --model "$PROVIDER/$MODEL" "$PROMPT" "$REPO_PATH" >"$STDOUT_LOG" 2>"$STDERR_LOG"
+  else
+    opencode run --print-logs --model "$PROVIDER/$MODEL" "$PROMPT" >"$STDOUT_LOG" 2>"$STDERR_LOG"
+  fi
   EXIT_CODE=$?
   set -e
 else
