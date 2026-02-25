@@ -1,5 +1,11 @@
 # ZHC-Nova Agent Roles (Roemmele Style)
 
+## Reference Repositories
+- ZeroClaw: https://github.com/openagen/zeroclaw
+- OpenCode: https://github.com/anomalyco/opencode
+- ZHC philosophy (Brian Roemmele): https://x.com/BrianRoemmele
+- Agent Swarm: The One-Person Dev Team Setup: https://x.com/elvissun/status/2025920521871716562?s=20
+
 ## CEO – Grok (xAI)
 - Vision, strategy, board meetings, market intel, IP/sales direction
 - 15–60 min check-ins

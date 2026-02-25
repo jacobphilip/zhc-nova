@@ -1,5 +1,12 @@
 # Operations Guide
 
+## Reference Repositories
+
+- ZeroClaw: https://github.com/openagen/zeroclaw
+- OpenCode: https://github.com/anomalyco/opencode
+- ZHC philosophy (Brian Roemmele): https://x.com/BrianRoemmele
+- Agent Swarm: The One-Person Dev Team Setup: https://x.com/elvissun/status/2025920521871716562?s=20
+
 ## Daily Flow (v1)
 
 1. Receive command (Telegram contract or CLI simulation).
