@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast
 
 init-dev:
 	./scripts/init_dev.sh
@@ -35,3 +35,6 @@ zeroclaw-preflight:
 
 user-services:
 	./scripts/install_user_services.sh
+
+smoke-fast:
+	python3 scripts/smoke_fast_control_plane.py --mode full

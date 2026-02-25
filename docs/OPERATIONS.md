@@ -174,6 +174,13 @@ ls storage/tasks/<task_id>/artifacts
 ## Telegram Smoke Test
 
 - Run `docs/TELEGRAM_SMOKETEST.md` after deploy/restart.
+- Fast harness (2-6 minutes):
+
+```bash
+python3 scripts/smoke_fast_control_plane.py --mode full --json --output storage/memory/fast_smoke_latest.json
+```
+
+- Pass condition: JSON output contains `"ok": true`.
 
 ## Ubuntu Single-Node Alive Checklist
 
