@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Rule-based task router for v1 Pi/Ubuntu dispatch."""
 
+# Permanent v1 policy: OpenCode has no direct Grok/ChatGPT API or browser access.
+# If routing/execution needs latest external information or non-local certainty, emit
+# the exact "=== EXTERNAL QUERY NEEDED ===" block and wait for Jacob's
+# "=== EXTERNAL RESPONSE ===" before continuing.
+
 from __future__ import annotations
 
 import argparse
