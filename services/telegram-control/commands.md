@@ -30,8 +30,28 @@ Example:
 `/approve <task_id> <action_category> [note]`
 
 - Records human approval decision for gated actions.
-- Resumes blocked task execution when approved.
+- If planner/reviewer gate is already satisfied, resumes blocked task execution when approved.
+- If planner/reviewer gate is not satisfied, keeps task blocked until review artifacts are recorded.
 - If rejected, task is deterministically cancelled.
+
+## /plan
+
+`/plan <task_id> <summary>`
+
+- Records planner artifact for `UBUNTU_HEAVY` tasks.
+
+## /review
+
+`/review <task_id> <pass|fail> [notes]`
+
+- Records reviewer artifact and verdict for `UBUNTU_HEAVY` tasks.
+- `pass` is required before heavy task can resume.
+
+## /resume
+
+`/resume <task_id>`
+
+- Attempts to resume blocked task after approvals and review gate are satisfied.
 
 ## /stop
 

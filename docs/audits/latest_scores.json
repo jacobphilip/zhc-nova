@@ -1,14 +1,14 @@
 {
-  "swappable_modular": 6.5,
-  "secure_by_default": 5.5,
+  "swappable_modular": 7,
+  "secure_by_default": 8,
   "lightweight_runtime": 5,
-  "provider_local_first": 6,
-  "multi_agent_swarm": 4,
-  "configurable_autonomy": 6,
-  "hybrid_memory_compression": 2.5,
-  "terminal_daemon_interfaces": 5,
-  "agentic_meta_engineering": 3,
-  "closed_loop_feedback": 2,
-  "cost_optimization": 3,
-  "ethical_auditable_governance": 7
+  "provider_local_first": 6.5,
+  "multi_agent_swarm": 6.5,
+  "configurable_autonomy": 8,
+  "hybrid_memory_compression": 3,
+  "terminal_daemon_interfaces": 5.5,
+  "agentic_meta_engineering": 5,
+  "closed_loop_feedback": 4,
+  "cost_optimization": 5.5,
+  "ethical_auditable_governance": 8
 }

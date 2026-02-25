@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -181,6 +182,40 @@ def run_registry(args: list[str], db_path: Path) -> dict[str, Any]:
     return json.loads(proc.stdout)
 
 
+def merge_task_metadata(
+    task_id: str, db_path: Path, patch: dict[str, Any], detail: str
+) -> None:
+    run_registry(
+        [
+            "metadata-merge",
+            "--task-id",
+            task_id,
+            "--metadata",
+            json.dumps(patch),
+            "--detail",
+            detail,
+        ],
+        db_path,
+    )
+
+
+def model_hint_for_task(task_type: str) -> tuple[str, str]:
+    default_provider = os.getenv("ZHC_DEFAULT_PROVIDER", "openai")
+    default_model = os.getenv("ZHC_DEFAULT_MODEL", "codex")
+    fallback_provider = os.getenv("ZHC_FALLBACK_PROVIDER", "openrouter")
+    fallback_model = os.getenv("ZHC_FALLBACK_MODEL", "planner-model")
+    if task_type in {"code_review", "plan", "summary"}:
+        return fallback_provider, fallback_model
+    return default_provider, default_model
+
+
+def estimate_cost_usd(task_type: str, duration_ms: int, route_class: str) -> float:
+    if route_class == "PI_LIGHT":
+        return round(max(duration_ms, 1) * 0.000002, 6)
+    base = 0.01 if task_type in {"code_refactor", "build_fix"} else 0.006
+    return round(base + max(duration_ms, 1) * 0.000004, 6)
+
+
 def append_task_event(task_id: str, detail: str, db_path: Path) -> None:
     import sqlite3
 
@@ -195,6 +230,86 @@ def append_task_event(task_id: str, detail: str, db_path: Path) -> None:
 
 def run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def task_dir(task_id: str) -> Path:
+    return (
+        Path(os.getenv("ZHC_STORAGE_ROOT", str(repo_root() / "storage")))
+        / "tasks"
+        / task_id
+    )
+
+
+def planner_artifact_path(task_id: str) -> Path:
+    return task_dir(task_id) / "artifacts" / "planner.md"
+
+
+def reviewer_artifact_path(task_id: str) -> Path:
+    return task_dir(task_id) / "artifacts" / "reviewer.json"
+
+
+def review_gate_status(task_id: str) -> dict[str, Any]:
+    planner_path = planner_artifact_path(task_id)
+    reviewer_path = reviewer_artifact_path(task_id)
+
+    planner_present = planner_path.exists()
+    reviewer_present = reviewer_path.exists()
+    reviewer_passed = False
+    reviewer_verdict = "missing"
+
+    if reviewer_present:
+        try:
+            payload = json.loads(reviewer_path.read_text(encoding="utf-8"))
+            reviewer_verdict = str(payload.get("verdict", "missing")).lower().strip()
+            reviewer_passed = reviewer_verdict == "pass"
+        except json.JSONDecodeError:
+            reviewer_verdict = "invalid"
+            reviewer_passed = False
+
+    gate_passed = planner_present and reviewer_present and reviewer_passed
+    return {
+        "planner_present": planner_present,
+        "reviewer_present": reviewer_present,
+        "reviewer_verdict": reviewer_verdict,
+        "gate_passed": gate_passed,
+    }
+
+
+def write_planner_artifact(task_id: str, author: str, summary: str) -> Path:
+    path = planner_artifact_path(task_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                f"author: {author}",
+                f"created_at: {utc_now()}",
+                "",
+                "plan:",
+                summary,
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_reviewer_artifact(
+    task_id: str,
+    reviewer: str,
+    verdict: str,
+    notes: str,
+) -> Path:
+    path = reviewer_artifact_path(task_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "reviewer": reviewer,
+        "verdict": verdict,
+        "notes": notes,
+        "created_at": utc_now(),
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return path
 
 
 def dispatch(
@@ -222,13 +337,9 @@ def dispatch(
         return "running", f"dispatched_to_ubuntu task_id={remote_task_id}"
 
     # PI_LIGHT local stub execution
-    task_dir = (
-        Path(os.getenv("ZHC_STORAGE_ROOT", str(repo_root() / "storage")))
-        / "tasks"
-        / task_id
-    )
-    task_dir.mkdir(parents=True, exist_ok=True)
-    (task_dir / "pi_worker_stub.log").write_text(
+    current_task_dir = task_dir(task_id)
+    current_task_dir.mkdir(parents=True, exist_ok=True)
+    (current_task_dir / "pi_worker_stub.log").write_text(
         "[STUB] PI_LIGHT worker executed\n"
         "TODO: REAL_INTEGRATION - bind actual Pi worker runtime\n",
         encoding="utf-8",
@@ -275,10 +386,14 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             action_category = "supervised_heavy_execution"
 
     task_id = f"task-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
+    model_provider, model_name = model_hint_for_task(task_type)
     metadata = {
         "source": "router_v1",
         "approval_required": approval_required,
         "autonomy_mode": mode,
+        "model_provider_hint": model_provider,
+        "model_name_hint": model_name,
+        "queued_at": utc_now(),
     }
 
     create_payload = run_registry(
@@ -341,6 +456,14 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
 
     append_task_event(task_id, "policy_allow", db_path)
 
+    gate_required = route_class == "UBUNTU_HEAVY"
+    gate_status = review_gate_status(task_id)
+
+    pending_reasons: list[str] = []
+    if gate_required and not gate_status["gate_passed"]:
+        pending_reasons.append("planner_reviewer_gate")
+        append_task_event(task_id, "review_gate_pending", db_path)
+
     if approval_required:
         run_registry(
             [
@@ -356,6 +479,11 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             ],
             db_path,
         )
+        pending_reasons.append("human_approval")
+        append_task_event(task_id, "approval_required before execution", db_path)
+
+    if pending_reasons:
+        block_detail = "awaiting_" + "_and_".join(pending_reasons)
         run_registry(
             [
                 "update",
@@ -364,27 +492,29 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
                 "--status",
                 "blocked",
                 "--detail",
-                "awaiting_human_approval",
+                block_detail,
             ],
             db_path,
         )
-        append_task_event(task_id, "approval_required before execution", db_path)
         return {
             "task_id": task_id,
             "status": "blocked",
             "route_class": route_class,
             "risk_level": risk_level,
-            "approval_required": True,
-            "action_category": action_category,
+            "approval_required": approval_required,
+            "action_category": action_category if approval_required else "none",
             "autonomy_mode": mode,
             "policy_status": "allowed",
             "policy_reason": "allowed",
-            "message": "Task created and blocked pending approval",
+            "review_gate": gate_status,
+            "message": f"Task created and blocked pending: {', '.join(pending_reasons)}",
         }
 
+    dispatch_started = time.perf_counter()
     dispatch_status, dispatch_detail = dispatch(
         route_class, task_type, prompt, task_id, mode
     )
+    dispatch_ms = max(1, int((time.perf_counter() - dispatch_started) * 1000))
     run_registry(
         [
             "update",
@@ -398,6 +528,23 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         db_path,
     )
     append_task_event(task_id, dispatch_detail, db_path)
+    merge_task_metadata(
+        task_id,
+        db_path,
+        {
+            "dispatch_duration_ms": dispatch_ms,
+            "estimated_cost_usd": estimate_cost_usd(
+                task_type, dispatch_ms, route_class
+            ),
+            "last_dispatch_status": dispatch_status,
+        },
+        "telemetry_dispatch_route",
+    )
+    append_task_event(
+        task_id,
+        f"telemetry route_ms={dispatch_ms} est_cost={estimate_cost_usd(task_type, dispatch_ms, route_class)}",
+        db_path,
+    )
 
     return {
         "task_id": task_id,
@@ -411,6 +558,150 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         "message": dispatch_detail,
         "created": create_payload.get("created_at"),
     }
+
+
+def dispatch_blockers(task: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    if task.get("route_class") == "UBUNTU_HEAVY":
+        gate = review_gate_status(task["task_id"])
+        if not gate["gate_passed"]:
+            blockers.append("planner_reviewer_gate")
+
+    if task.get("requires_approval"):
+        approvals = task.get("approvals", [])
+        approved = any(a.get("status") == "approved" for a in approvals)
+        if not approved:
+            blockers.append("human_approval")
+    return blockers
+
+
+def dispatch_task_if_ready(
+    task: dict[str, Any], mode: str, db_path: Path
+) -> dict[str, Any]:
+    blockers = dispatch_blockers(task)
+    if blockers:
+        append_task_event(
+            task["task_id"],
+            f"resume_blocked pending={','.join(blockers)}",
+            db_path,
+        )
+        return {
+            "task_id": task["task_id"],
+            "status": "blocked",
+            "autonomy_mode": mode,
+            "pending": blockers,
+            "review_gate": review_gate_status(task["task_id"]),
+            "message": f"Task remains blocked pending: {', '.join(blockers)}",
+        }
+
+    dispatch_started = time.perf_counter()
+    dispatch_status, dispatch_detail = dispatch(
+        task["route_class"], task["task_type"], task["prompt"], task["task_id"], mode
+    )
+    dispatch_ms = max(1, int((time.perf_counter() - dispatch_started) * 1000))
+    run_registry(
+        [
+            "update",
+            "--task-id",
+            task["task_id"],
+            "--status",
+            dispatch_status,
+            "--detail",
+            dispatch_detail,
+        ],
+        db_path,
+    )
+    append_task_event(
+        task["task_id"],
+        f"dispatched_after_gates status={dispatch_status} detail={dispatch_detail}",
+        db_path,
+    )
+    merge_task_metadata(
+        task["task_id"],
+        db_path,
+        {
+            "dispatch_duration_ms": dispatch_ms,
+            "estimated_cost_usd": estimate_cost_usd(
+                task["task_type"], dispatch_ms, task["route_class"]
+            ),
+            "last_dispatch_status": dispatch_status,
+        },
+        "telemetry_dispatch_resume",
+    )
+    append_task_event(
+        task["task_id"],
+        (
+            "telemetry "
+            f"resume_ms={dispatch_ms} est_cost={estimate_cost_usd(task['task_type'], dispatch_ms, task['route_class'])}"
+        ),
+        db_path,
+    )
+    return {
+        "task_id": task["task_id"],
+        "status": dispatch_status,
+        "autonomy_mode": mode,
+        "message": dispatch_detail,
+    }
+
+
+def record_plan(task_id: str, author: str, summary: str) -> dict[str, Any]:
+    db_path = Path(
+        os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
+    ).resolve()
+    task = run_registry(["get", "--task-id", task_id], db_path)
+    if task.get("route_class") != "UBUNTU_HEAVY":
+        raise ValueError("Planner artifact is only required for UBUNTU_HEAVY tasks")
+    artifact = write_planner_artifact(task_id, author, summary)
+    append_task_event(task_id, f"planner_artifact_recorded path={artifact}", db_path)
+    return {
+        "task_id": task_id,
+        "artifact": str(artifact),
+        "review_gate": review_gate_status(task_id),
+        "message": "Planner artifact recorded",
+    }
+
+
+def record_review(
+    task_id: str, reviewer: str, verdict: str, notes: str
+) -> dict[str, Any]:
+    db_path = Path(
+        os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
+    ).resolve()
+    task = run_registry(["get", "--task-id", task_id], db_path)
+    if task.get("route_class") != "UBUNTU_HEAVY":
+        raise ValueError("Reviewer artifact is only required for UBUNTU_HEAVY tasks")
+    verdict_l = verdict.strip().lower()
+    if verdict_l not in {"pass", "fail"}:
+        raise ValueError("verdict must be one of: pass, fail")
+    artifact = write_reviewer_artifact(task_id, reviewer, verdict_l, notes)
+    append_task_event(
+        task_id,
+        f"reviewer_artifact_recorded verdict={verdict_l} path={artifact}",
+        db_path,
+    )
+    return {
+        "task_id": task_id,
+        "artifact": str(artifact),
+        "review_gate": review_gate_status(task_id),
+        "message": "Reviewer artifact recorded",
+    }
+
+
+def resume_task(task_id: str, requested_by: str) -> dict[str, Any]:
+    mode = autonomy_mode()
+    if mode == "readonly":
+        raise ValueError("Cannot resume tasks while ZHC_AUTONOMY_MODE=readonly")
+
+    db_path = Path(
+        os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
+    ).resolve()
+    task = run_registry(["get", "--task-id", task_id], db_path)
+    if task.get("status") != "blocked":
+        raise ValueError(f"Task {task_id} must be blocked before resume")
+
+    result = dispatch_task_if_ready(task, mode, db_path)
+    append_task_event(task_id, f"resume_requested by={requested_by}", db_path)
+    return result
 
 
 def approve_task(
@@ -479,37 +770,26 @@ def approve_task(
             "message": "Task cancelled due to rejected approval",
         }
 
-    dispatch_status, dispatch_detail = dispatch(
-        task["route_class"], task["task_type"], task["prompt"], task_id, mode
-    )
-    run_registry(
-        [
-            "update",
-            "--task-id",
-            task_id,
-            "--status",
-            dispatch_status,
-            "--detail",
-            dispatch_detail,
-        ],
-        db_path,
-    )
+    refreshed_task = run_registry(["get", "--task-id", task_id], db_path)
+    dispatch_result = dispatch_task_if_ready(refreshed_task, mode, db_path)
     append_task_event(
         task_id,
         (
-            "resumed_after_approval "
-            f"action={action_category} decision={decision} by={decided_by}; {dispatch_detail}"
+            "approval_decision_processed "
+            f"action={action_category} decision={decision} by={decided_by}"
         ),
         db_path,
     )
 
     return {
         "task_id": task_id,
-        "status": dispatch_status,
+        "status": dispatch_result["status"],
         "action_category": action_category,
         "decision": decision,
         "autonomy_mode": mode,
-        "message": dispatch_detail,
+        "pending": dispatch_result.get("pending", []),
+        "review_gate": dispatch_result.get("review_gate"),
+        "message": dispatch_result["message"],
     }
 
 
@@ -535,6 +815,27 @@ def parse_args() -> argparse.Namespace:
     approve_parser.add_argument(
         "--decision", choices=["approved", "rejected"], default="approved"
     )
+
+    plan_parser = sub.add_parser(
+        "record-plan", help="Record planner artifact for heavy task"
+    )
+    plan_parser.add_argument("--task-id", required=True)
+    plan_parser.add_argument("--author", required=True)
+    plan_parser.add_argument("--summary", required=True)
+
+    review_parser = sub.add_parser(
+        "record-review", help="Record reviewer artifact and verdict for heavy task"
+    )
+    review_parser.add_argument("--task-id", required=True)
+    review_parser.add_argument("--reviewer", required=True)
+    review_parser.add_argument("--verdict", choices=["pass", "fail"], required=True)
+    review_parser.add_argument("--notes", default="")
+
+    resume_parser = sub.add_parser(
+        "resume", help="Resume blocked task once all gates are satisfied"
+    )
+    resume_parser.add_argument("--task-id", required=True)
+    resume_parser.add_argument("--requested-by", required=True)
 
     return parser.parse_args()
 
@@ -608,6 +909,26 @@ def main() -> int:
                 note=args.note,
                 decision=args.decision,
             )
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "record-plan":
+            result = record_plan(args.task_id, args.author, args.summary)
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "record-review":
+            result = record_review(
+                task_id=args.task_id,
+                reviewer=args.reviewer,
+                verdict=args.verdict,
+                notes=args.notes,
+            )
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "resume":
+            result = resume_task(args.task_id, args.requested_by)
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
 

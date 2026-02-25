@@ -27,8 +27,18 @@ python3 services/task-router/router.py route --task-type code_refactor --prompt 
 # Approve and resume a blocked task
 python3 services/task-router/router.py approve --task-id <task_id> --action-category deploy_restart --decided-by jacob --note "approved"
 
+# Record planner/reviewer artifacts for UBUNTU_HEAVY task
+python3 services/task-router/router.py record-plan --task-id <task_id> --author planner --summary "Plan steps and risks"
+python3 services/task-router/router.py record-review --task-id <task_id> --reviewer reviewer --verdict pass --notes "Looks safe"
+
+# Resume blocked task after gates are satisfied
+python3 services/task-router/router.py resume --task-id <task_id> --requested-by jacob
+
 # List tasks
 python3 shared/task-registry/task_registry.py list --limit 20
+
+# Telemetry summary (cost/latency estimates)
+python3 shared/task-registry/task_registry.py --json telemetry --limit 20
 
 # Get task
 python3 shared/task-registry/task_registry.py get --task-id <task_id>
@@ -62,6 +72,18 @@ Inspect blocked reason and events:
 ```bash
 python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
 ```
+
+## Heavy Task Gate
+
+- Every `UBUNTU_HEAVY` task is blocked until both artifacts exist:
+  - `storage/tasks/<task_id>/artifacts/planner.md`
+  - `storage/tasks/<task_id>/artifacts/reviewer.json` with verdict `pass`
+- High-risk tasks may require both human approval and planner/reviewer gate before dispatch.
+
+## Telemetry
+
+- Router writes per-task telemetry into metadata (`dispatch_duration_ms`, `estimated_cost_usd`, model hints).
+- View rollup with `python3 shared/task-registry/task_registry.py --json telemetry --limit 20`.
 
 ## Logs and Artifacts
 

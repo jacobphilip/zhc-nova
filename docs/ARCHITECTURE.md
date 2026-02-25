@@ -26,7 +26,9 @@ Primary interface is Telegram. Web dashboard is a future secondary interface.
 4. Router dispatches execution:
    - `UBUNTU_HEAVY`: remote dispatch to Ubuntu and run `zrun.sh`.
    - `PI_LIGHT`: execute local worker stub.
+   - `UBUNTU_HEAVY` dispatch is gated on planner/reviewer artifacts (review verdict must be `pass`).
 5. Execution writes artifacts under `storage/tasks/<task_id>/`.
+6. Router records telemetry metadata (dispatch duration, estimated cost, model hints) per task.
 6. Registry status/events are updated and returned to user.
 7. If action is gated, approval state blocks execution progression.
 

@@ -9,6 +9,15 @@ This plan converts the latest audit gaps into a concrete implementation sequence
 
 ## Workstreams
 
+Status snapshot (2026-02-25):
+
+- Workstream 1: implemented (router-backed approval/resume)
+- Workstream 2: implemented (`readonly`/`supervised`/`auto`)
+- Workstream 3: implemented (strict execution policy)
+- Workstream 4: implemented baseline (planner/reviewer gate)
+- Workstream 5: pending
+- Workstream 6: in progress (telemetry metadata + summary command)
+
 1) Telegram Runtime + Approval Resume
 - Implement real command handlers for `/newtask`, `/status`, `/list`, `/approve`, `/stop`, `/board`.
 - Wire `/approve` to approvals table updates and blocked-task resume logic.

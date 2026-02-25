@@ -112,6 +112,32 @@ def update_task(
     return get_task(db_path, task_id)
 
 
+def merge_task_metadata(
+    db_path: Path, task_id: str, metadata_patch: dict[str, Any], detail: str
+) -> dict[str, Any]:
+    now = utc_now()
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT metadata_json FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            raise KeyError(f"Task not found: {task_id}")
+
+        current = json.loads(row["metadata_json"] or "{}")
+        if not isinstance(current, dict):
+            current = {}
+        current.update(metadata_patch)
+
+        conn.execute(
+            "UPDATE tasks SET metadata_json = ?, updated_at = ? WHERE task_id = ?",
+            (json.dumps(current, separators=(",", ":")), now, task_id),
+        )
+        append_event(conn, task_id, "metadata_updated", detail)
+        conn.commit()
+    return get_task(db_path, task_id)
+
+
 def request_approval(
     db_path: Path,
     task_id: str,
@@ -311,6 +337,55 @@ def list_tasks(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def telemetry_summary(db_path: Path, limit: int = 20) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT task_id, task_type, route_class, status, metadata_json, created_at
+            FROM tasks
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    tasks: list[dict[str, Any]] = []
+    total_estimated_cost = 0.0
+    total_dispatch_ms = 0
+    counted_dispatch = 0
+    for row in rows:
+        metadata = json.loads(row["metadata_json"] or "{}")
+        dispatch_ms = int(metadata.get("dispatch_duration_ms", 0) or 0)
+        est_cost = float(metadata.get("estimated_cost_usd", 0.0) or 0.0)
+        if dispatch_ms > 0:
+            total_dispatch_ms += dispatch_ms
+            counted_dispatch += 1
+        total_estimated_cost += est_cost
+        tasks.append(
+            {
+                "task_id": row["task_id"],
+                "task_type": row["task_type"],
+                "route_class": row["route_class"],
+                "status": row["status"],
+                "dispatch_duration_ms": dispatch_ms,
+                "estimated_cost_usd": round(est_cost, 6),
+                "model_provider_hint": metadata.get("model_provider_hint", ""),
+                "model_name_hint": metadata.get("model_name_hint", ""),
+            }
+        )
+
+    avg_dispatch_ms = (
+        int(total_dispatch_ms / counted_dispatch) if counted_dispatch else 0
+    )
+    return {
+        "limit": limit,
+        "task_count": len(tasks),
+        "avg_dispatch_duration_ms": avg_dispatch_ms,
+        "total_estimated_cost_usd": round(total_estimated_cost, 6),
+        "tasks": tasks,
+    }
+
+
 def get_task(db_path: Path, task_id: str) -> dict[str, Any]:
     with connect(db_path) as conn:
         row = conn.execute(
@@ -391,6 +466,9 @@ def parse_args() -> argparse.Namespace:
     p_list = sub.add_parser("list", help="List tasks")
     p_list.add_argument("--limit", type=int, default=20)
 
+    p_telemetry = sub.add_parser("telemetry", help="Summarize task telemetry")
+    p_telemetry.add_argument("--limit", type=int, default=20)
+
     p_approval_request = sub.add_parser(
         "approval-request", help="Create or refresh an approval request"
     )
@@ -412,6 +490,13 @@ def parse_args() -> argparse.Namespace:
 
     p_approval_list = sub.add_parser("approval-list", help="List approvals for a task")
     p_approval_list.add_argument("--task-id", required=True)
+
+    p_metadata_merge = sub.add_parser(
+        "metadata-merge", help="Merge metadata JSON into a task"
+    )
+    p_metadata_merge.add_argument("--task-id", required=True)
+    p_metadata_merge.add_argument("--metadata", required=True, help="JSON object")
+    p_metadata_merge.add_argument("--detail", default="metadata_merge")
 
     return parser.parse_args()
 
@@ -465,6 +550,11 @@ def main() -> int:
             print_out(result, args.json)
             return 0
 
+        if args.command == "telemetry":
+            result = telemetry_summary(db_path, args.limit)
+            print_out(result, args.json)
+            return 0
+
         if args.command == "approval-request":
             result = request_approval(
                 db_path=db_path,
@@ -490,6 +580,22 @@ def main() -> int:
 
         if args.command == "approval-list":
             result = get_approvals(db_path, args.task_id)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "metadata-merge":
+            try:
+                metadata_patch = json.loads(args.metadata)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"--metadata must be valid JSON: {exc}") from exc
+            if not isinstance(metadata_patch, dict):
+                raise ValueError("--metadata must decode to a JSON object")
+            result = merge_task_metadata(
+                db_path=db_path,
+                task_id=args.task_id,
+                metadata_patch=metadata_patch,
+                detail=args.detail,
+            )
             print_out(result, args.json)
             return 0
 
