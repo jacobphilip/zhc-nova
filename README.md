@@ -115,6 +115,10 @@ python3 shared/task-registry/task_registry.py --json trace-events --trace-id <tr
 
 See `ROADMAP.md` for milestones from single-node v1 to multi-node swarm orchestration.
 
+Active next-step draft:
+
+- CP-007 ops surface spec: `docs/CP_007_OPS_SURFACE_DRAFT.md`
+
 ## Iteration Audits
 
 - Repeatable audit process: `docs/AUDIT_PROCESS.md`

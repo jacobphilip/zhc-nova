@@ -113,6 +113,7 @@ This is the execution board for the next hardening sprint.
 - Suggested files:
   - `services/telegram-control/bot_longpoll.py`
   - `shared/task-registry/task_registry.py`
+- Draft spec: `docs/CP_007_OPS_SURFACE_DRAFT.md`
 
 ### CP-008 - Chaos-Lite Reliability Suite
 
