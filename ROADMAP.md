@@ -22,6 +22,7 @@
 - Execution retries, backoff, dead-letter handling
 - Expanded worker channels and better local Pi task handling
 - Ubuntu single-node ZeroClaw gateway service rollout before multi-node expansion
+- Active execution board: `docs/V1_2_RELIABLE_CONTROL_PLANE_BOARD.md`
 
 ## v1.3 - Data Governance Hardening
 
