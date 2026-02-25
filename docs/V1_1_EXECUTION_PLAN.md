@@ -15,8 +15,8 @@ Status snapshot (2026-02-25):
 - Workstream 2: implemented (`readonly`/`supervised`/`auto`)
 - Workstream 3: implemented (strict execution policy)
 - Workstream 4: implemented baseline (planner/reviewer gate)
-- Workstream 5: pending
-- Workstream 6: in progress (telemetry metadata + summary command)
+- Workstream 5: in progress (token-budget context compaction + retrieval sources)
+- Workstream 6: implemented baseline (telemetry metadata + summary command + cost source)
 
 1) Telegram Runtime + Approval Resume
 - Implement real command handlers for `/newtask`, `/status`, `/list`, `/approve`, `/stop`, `/board`.

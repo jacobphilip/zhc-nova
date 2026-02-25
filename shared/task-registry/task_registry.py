@@ -353,13 +353,36 @@ def telemetry_summary(db_path: Path, limit: int = 20) -> dict[str, Any]:
     total_estimated_cost = 0.0
     total_dispatch_ms = 0
     counted_dispatch = 0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_input_tokens = 0
+    total_compacted_tokens = 0
+    total_ratio = 0.0
+    counted_ratio = 0
+    cost_source_counts = {"openrouter_api": 0, "heuristic": 0, "unknown": 0}
     for row in rows:
         metadata = json.loads(row["metadata_json"] or "{}")
         dispatch_ms = int(metadata.get("dispatch_duration_ms", 0) or 0)
         est_cost = float(metadata.get("estimated_cost_usd", 0.0) or 0.0)
+        est_prompt_tokens = int(metadata.get("estimated_prompt_tokens", 0) or 0)
+        est_completion_tokens = int(metadata.get("estimated_completion_tokens", 0) or 0)
+        context_input_tokens = int(metadata.get("context_input_tokens", 0) or 0)
+        context_compacted_tokens = int(metadata.get("context_compacted_tokens", 0) or 0)
+        compression_ratio = float(metadata.get("compression_ratio", 0.0) or 0.0)
+        cost_source = str(metadata.get("cost_source", "unknown") or "unknown")
+        if cost_source not in cost_source_counts:
+            cost_source = "unknown"
         if dispatch_ms > 0:
             total_dispatch_ms += dispatch_ms
             counted_dispatch += 1
+        total_prompt_tokens += est_prompt_tokens
+        total_completion_tokens += est_completion_tokens
+        total_input_tokens += context_input_tokens
+        total_compacted_tokens += context_compacted_tokens
+        if compression_ratio > 0:
+            total_ratio += compression_ratio
+            counted_ratio += 1
+        cost_source_counts[cost_source] += 1
         total_estimated_cost += est_cost
         tasks.append(
             {
@@ -368,7 +391,12 @@ def telemetry_summary(db_path: Path, limit: int = 20) -> dict[str, Any]:
                 "route_class": row["route_class"],
                 "status": row["status"],
                 "dispatch_duration_ms": dispatch_ms,
+                "estimated_prompt_tokens": est_prompt_tokens,
+                "estimated_completion_tokens": est_completion_tokens,
+                "estimated_total_tokens": est_prompt_tokens + est_completion_tokens,
+                "compression_ratio": round(compression_ratio, 4),
                 "estimated_cost_usd": round(est_cost, 6),
+                "cost_source": cost_source,
                 "model_provider_hint": metadata.get("model_provider_hint", ""),
                 "model_name_hint": metadata.get("model_name_hint", ""),
             }
@@ -381,7 +409,16 @@ def telemetry_summary(db_path: Path, limit: int = 20) -> dict[str, Any]:
         "limit": limit,
         "task_count": len(tasks),
         "avg_dispatch_duration_ms": avg_dispatch_ms,
+        "avg_compression_ratio": round(total_ratio / counted_ratio, 4)
+        if counted_ratio
+        else 0,
+        "total_estimated_prompt_tokens": total_prompt_tokens,
+        "total_estimated_completion_tokens": total_completion_tokens,
+        "total_estimated_tokens": total_prompt_tokens + total_completion_tokens,
+        "total_context_input_tokens": total_input_tokens,
+        "total_context_compacted_tokens": total_compacted_tokens,
         "total_estimated_cost_usd": round(total_estimated_cost, 6),
+        "cost_source_counts": cost_source_counts,
         "tasks": tasks,
     }
 

@@ -83,7 +83,15 @@ python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
 ## Telemetry
 
 - Router writes per-task telemetry into metadata (`dispatch_duration_ms`, `estimated_cost_usd`, model hints).
+- Router also writes context compaction + token estimates and cost artifacts.
 - View rollup with `python3 shared/task-registry/task_registry.py --json telemetry --limit 20`.
+
+Inspect artifacts for one task:
+
+```bash
+python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
+ls storage/tasks/<task_id>/artifacts
+```
 
 ## Logs and Artifacts
 

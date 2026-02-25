@@ -31,6 +31,17 @@ Override with `ZHC_TASK_DB`.
 - Events capture state transitions, dispatch outcomes, and approval waits
 - Approvals model retains `required`, `approved`, `rejected`, `cancelled`
 
+## Task Metadata Telemetry (v1.1)
+
+Task `metadata` may include:
+
+- `model_provider_hint`, `model_name_hint`
+- `estimated_prompt_tokens`, `estimated_completion_tokens`, `estimated_total_tokens`
+- `estimated_cost_usd`, `cost_source` (`openrouter_api` or `heuristic`)
+- `context_input_tokens`, `context_compacted_tokens`, `compression_ratio`, `context_token_budget`
+- `retrieval_sources` (memory/task source IDs)
+- `context_compacted_path`, `cost_estimate_path`
+
 ## TODO
 
 - TODO: REAL_INTEGRATION - immutable audit sealing for compliance finalizations.

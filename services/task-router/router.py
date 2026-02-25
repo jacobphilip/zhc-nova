@@ -14,6 +14,8 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -209,11 +211,166 @@ def model_hint_for_task(task_type: str) -> tuple[str, str]:
     return default_provider, default_model
 
 
-def estimate_cost_usd(task_type: str, duration_ms: int, route_class: str) -> float:
+def estimate_tokens(text: str) -> int:
+    return max(1, (len(text) + 3) // 4)
+
+
+def token_budget(route_class: str) -> int:
+    if route_class == "UBUNTU_HEAVY":
+        return int(os.getenv("ZHC_CONTEXT_TOKEN_BUDGET_HEAVY", "2400"))
+    return int(os.getenv("ZHC_CONTEXT_TOKEN_BUDGET", "1200"))
+
+
+def compact_text_to_token_budget(text: str, budget: int) -> tuple[str, int, int, float]:
+    input_tokens = estimate_tokens(text)
+    if input_tokens <= budget:
+        return text, input_tokens, input_tokens, 1.0
+
+    lines = text.splitlines()
+    if not lines:
+        return text, input_tokens, input_tokens, 1.0
+
+    head_count = max(4, len(lines) // 3)
+    tail_count = max(4, len(lines) // 3)
+    selected = lines[:head_count] + ["... [compacted] ..."] + lines[-tail_count:]
+    compacted = "\n".join(selected)
+
+    while estimate_tokens(compacted) > budget and (head_count > 2 or tail_count > 2):
+        if head_count > 2:
+            head_count -= 1
+        if tail_count > 2:
+            tail_count -= 1
+        selected = lines[:head_count] + ["... [compacted] ..."] + lines[-tail_count:]
+        compacted = "\n".join(selected)
+
+    out_tokens = estimate_tokens(compacted)
+    ratio = round(out_tokens / max(input_tokens, 1), 4)
+    return compacted, input_tokens, out_tokens, ratio
+
+
+def recent_memory_snippets(
+    db_path: Path, task_type: str, limit: int = 5
+) -> list[dict[str, str]]:
+    import sqlite3
+
+    snippets: list[dict[str, str]] = []
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT task_id, task_type, status, prompt, metadata_json
+            FROM tasks
+            WHERE task_type = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (task_type, limit),
+        ).fetchall()
+    for row in rows:
+        metadata = json.loads(row["metadata_json"] or "{}")
+        snippets.append(
+            {
+                "source": f"task:{row['task_id']}",
+                "text": (
+                    f"task_type={row['task_type']} status={row['status']} "
+                    f"cost={metadata.get('estimated_cost_usd', 0)} prompt={row['prompt'][:180]}"
+                ),
+            }
+        )
+
+    memory_dir = repo_root() / "storage" / "memory"
+    if memory_dir.exists():
+        for path in sorted(
+            memory_dir.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True
+        )[:3]:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            snippets.append({"source": f"memory:{path.name}", "text": text[:300]})
+
+    return snippets
+
+
+def build_context_payload(task: dict[str, Any], db_path: Path) -> tuple[str, list[str]]:
+    snippets = recent_memory_snippets(db_path, task["task_type"], limit=5)
+    sources = [entry["source"] for entry in snippets]
+    lines = [
+        f"task_id={task['task_id']}",
+        f"task_type={task['task_type']}",
+        f"route_class={task['route_class']}",
+        f"prompt={task['prompt']}",
+        "",
+        "retrieval:",
+    ]
+    for entry in snippets:
+        lines.append(f"- {entry['source']}: {entry['text']}")
+    return "\n".join(lines), sources
+
+
+def openrouter_model_pricing(model: str) -> tuple[float, float] | None:
+    enabled = os.getenv("ZHC_COST_LOOKUP_ENABLED", "1").strip()
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if enabled != "1" or not api_key:
+        return None
+
+    timeout_ms = int(os.getenv("ZHC_COST_LOOKUP_TIMEOUT_MS", "3000"))
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/models",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_ms / 1000) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+
+    for entry in payload.get("data", []):
+        if entry.get("id") != model:
+            continue
+        pricing = entry.get("pricing", {})
+        try:
+            prompt = float(pricing.get("prompt", "0") or 0)
+            completion = float(pricing.get("completion", "0") or 0)
+        except (TypeError, ValueError):
+            return None
+        return prompt, completion
+    return None
+
+
+def estimate_cost(
+    task_type: str,
+    route_class: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    model_hint: str,
+) -> dict[str, Any]:
+    pricing = openrouter_model_pricing(model_hint)
+    if pricing:
+        prompt_price, completion_price = pricing
+        estimated = (
+            (prompt_tokens * prompt_price) + (completion_tokens * completion_price)
+        ) / 1_000_000
+        return {
+            "estimated_cost_usd": round(estimated, 6),
+            "cost_source": "openrouter_api",
+            "pricing_prompt_per_million": prompt_price,
+            "pricing_completion_per_million": completion_price,
+        }
+
     if route_class == "PI_LIGHT":
-        return round(max(duration_ms, 1) * 0.000002, 6)
-    base = 0.01 if task_type in {"code_refactor", "build_fix"} else 0.006
-    return round(base + max(duration_ms, 1) * 0.000004, 6)
+        fallback = (prompt_tokens + completion_tokens) * 0.0000005
+    else:
+        base = 0.01 if task_type in {"code_refactor", "build_fix"} else 0.006
+        fallback = base + (prompt_tokens + completion_tokens) * 0.000001
+    return {
+        "estimated_cost_usd": round(fallback, 6),
+        "cost_source": "heuristic",
+    }
 
 
 def append_task_event(task_id: str, detail: str, db_path: Path) -> None:
@@ -510,52 +667,18 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "message": f"Task created and blocked pending: {', '.join(pending_reasons)}",
         }
 
-    dispatch_started = time.perf_counter()
-    dispatch_status, dispatch_detail = dispatch(
-        route_class, task_type, prompt, task_id, mode
-    )
-    dispatch_ms = max(1, int((time.perf_counter() - dispatch_started) * 1000))
-    run_registry(
-        [
-            "update",
-            "--task-id",
-            task_id,
-            "--status",
-            dispatch_status,
-            "--detail",
-            dispatch_detail,
-        ],
-        db_path,
-    )
-    append_task_event(task_id, dispatch_detail, db_path)
-    merge_task_metadata(
-        task_id,
-        db_path,
-        {
-            "dispatch_duration_ms": dispatch_ms,
-            "estimated_cost_usd": estimate_cost_usd(
-                task_type, dispatch_ms, route_class
-            ),
-            "last_dispatch_status": dispatch_status,
-        },
-        "telemetry_dispatch_route",
-    )
-    append_task_event(
-        task_id,
-        f"telemetry route_ms={dispatch_ms} est_cost={estimate_cost_usd(task_type, dispatch_ms, route_class)}",
-        db_path,
-    )
-
+    refreshed_task = run_registry(["get", "--task-id", task_id], db_path)
+    dispatch_result = dispatch_task_if_ready(refreshed_task, mode, db_path)
     return {
         "task_id": task_id,
-        "status": dispatch_status,
+        "status": dispatch_result["status"],
         "route_class": route_class,
         "risk_level": risk_level,
         "approval_required": False,
         "autonomy_mode": mode,
         "policy_status": "allowed",
         "policy_reason": "allowed",
-        "message": dispatch_detail,
+        "message": dispatch_result["message"],
         "created": create_payload.get("created_at"),
     }
 
@@ -594,6 +717,64 @@ def dispatch_task_if_ready(
             "message": f"Task remains blocked pending: {', '.join(blockers)}",
         }
 
+    context_payload, retrieval_sources = build_context_payload(task, db_path)
+    budget = token_budget(task["route_class"])
+    compacted, tokens_in, tokens_out, compression_ratio = compact_text_to_token_budget(
+        context_payload,
+        budget,
+    )
+    completion_tokens_est = max(64, int(tokens_out * 0.35))
+
+    metadata = task.get("metadata", {})
+    provider_hint = metadata.get("model_provider_hint")
+    model_hint = metadata.get("model_name_hint")
+    if not provider_hint or not model_hint:
+        provider_hint, model_hint = model_hint_for_task(task["task_type"])
+
+    cost_info = estimate_cost(
+        task["task_type"],
+        task["route_class"],
+        tokens_out,
+        completion_tokens_est,
+        model_hint,
+    )
+
+    artifacts_dir = task_dir(task["task_id"]) / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    context_path = artifacts_dir / "context_compacted.txt"
+    context_path.write_text(compacted, encoding="utf-8")
+    cost_path = artifacts_dir / "cost_estimate.json"
+    cost_payload = {
+        "task_id": task["task_id"],
+        "provider_hint": provider_hint,
+        "model_hint": model_hint,
+        "estimated_prompt_tokens": tokens_out,
+        "estimated_completion_tokens": completion_tokens_est,
+        "estimated_total_tokens": tokens_out + completion_tokens_est,
+        **cost_info,
+    }
+    cost_path.write_text(
+        json.dumps(cost_payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    append_task_event(
+        task["task_id"],
+        (
+            "context_compacted "
+            f"tokens_in={tokens_in} tokens_out={tokens_out} ratio={compression_ratio} budget={budget}"
+        ),
+        db_path,
+    )
+    append_task_event(
+        task["task_id"],
+        (
+            "cost_estimated "
+            f"source={cost_info['cost_source']} total_tokens={tokens_out + completion_tokens_est} "
+            f"usd={cost_info['estimated_cost_usd']}"
+        ),
+        db_path,
+    )
+
     dispatch_started = time.perf_counter()
     dispatch_status, dispatch_detail = dispatch(
         task["route_class"], task["task_type"], task["prompt"], task["task_id"], mode
@@ -621,9 +802,20 @@ def dispatch_task_if_ready(
         db_path,
         {
             "dispatch_duration_ms": dispatch_ms,
-            "estimated_cost_usd": estimate_cost_usd(
-                task["task_type"], dispatch_ms, task["route_class"]
-            ),
+            "estimated_prompt_tokens": tokens_out,
+            "estimated_completion_tokens": completion_tokens_est,
+            "estimated_total_tokens": tokens_out + completion_tokens_est,
+            "estimated_cost_usd": cost_info["estimated_cost_usd"],
+            "cost_source": cost_info["cost_source"],
+            "context_input_tokens": tokens_in,
+            "context_compacted_tokens": tokens_out,
+            "compression_ratio": compression_ratio,
+            "context_token_budget": budget,
+            "retrieval_sources": retrieval_sources,
+            "context_compacted_path": str(context_path),
+            "cost_estimate_path": str(cost_path),
+            "model_provider_hint": provider_hint,
+            "model_name_hint": model_hint,
             "last_dispatch_status": dispatch_status,
         },
         "telemetry_dispatch_resume",
@@ -632,7 +824,8 @@ def dispatch_task_if_ready(
         task["task_id"],
         (
             "telemetry "
-            f"resume_ms={dispatch_ms} est_cost={estimate_cost_usd(task['task_type'], dispatch_ms, task['route_class'])}"
+            f"resume_ms={dispatch_ms} est_cost={cost_info['estimated_cost_usd']} "
+            f"cost_source={cost_info['cost_source']}"
         ),
         db_path,
     )

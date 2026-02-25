@@ -24,6 +24,8 @@ Set or confirm in `.env`:
 - `ZHC_ROUTING_POLICY` and `ZHC_APPROVAL_POLICY`
 - `ZHC_EXECUTION_POLICY` and `ZHC_POLICY_ENFORCEMENT`
 - `ZHC_AUTONOMY_MODE` (`readonly`, `supervised`, `auto`)
+- `ZHC_CONTEXT_TOKEN_BUDGET` and `ZHC_CONTEXT_TOKEN_BUDGET_HEAVY`
+- `ZHC_COST_LOOKUP_ENABLED`, `ZHC_COST_LOOKUP_TIMEOUT_MS`, `OPENROUTER_API_KEY`
 - `ZHC_ENABLE_REAL_OPENCODE=1` only when real OpenCode command integration is ready
 
 Autonomy mode behavior:
