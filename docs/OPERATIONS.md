@@ -147,6 +147,14 @@ python3 shared/task-registry/task_registry.py --json lease-get --task-id <task_i
 - Idempotency record: `idempotency_keys` (query via `idempo-get` / `idempo-list`)
 - Runtime stdout/stderr: systemd journal (when enabled)
 
+## Timeout And Retry Matrix
+
+- Telegram poll: `TELEGRAM_POLL_TIMEOUT_SECONDS`, backoff to `TELEGRAM_MAX_BACKOFF_SECONDS` on poll errors.
+- Telegram API calls (`sendMessage` etc.): `TELEGRAM_API_CALL_TIMEOUT_SECONDS`.
+- Router/registry command calls from Telegram: `TELEGRAM_COMMAND_TIMEOUT_SECONDS` with retries controlled by `TELEGRAM_COMMAND_RETRY_MAX`, `TELEGRAM_COMMAND_RETRY_BACKOFF_SECONDS`, and `TELEGRAM_COMMAND_RETRY_JITTER_SECONDS`.
+- Heavy resume from Telegram: `TELEGRAM_RESUME_TIMEOUT_SECONDS` (separate from normal command timeout).
+- Dispatch wrapper execution: `ZHC_DISPATCH_TIMEOUT_SECONDS` with retries controlled by `ZHC_DISPATCH_RETRY_MAX`, `ZHC_DISPATCH_RETRY_BACKOFF_SECONDS`, and `ZHC_DISPATCH_RETRY_JITTER_SECONDS`.
+
 ## Recovery
 
 - If DB missing/corrupt: backup file, recreate with `./scripts/db_init.sh`.

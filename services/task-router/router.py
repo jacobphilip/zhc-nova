@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import random
 import socket
 import subprocess
 import sys
@@ -162,9 +163,56 @@ def dispatch_lease_seconds() -> int:
         return 120
 
 
+def dispatch_retry_max() -> int:
+    raw = os.getenv("ZHC_DISPATCH_RETRY_MAX", "1").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 1
+
+
+def dispatch_retry_backoff_seconds() -> float:
+    raw = os.getenv("ZHC_DISPATCH_RETRY_BACKOFF_SECONDS", "1.0").strip()
+    try:
+        return max(0.1, float(raw))
+    except ValueError:
+        return 1.0
+
+
+def dispatch_retry_jitter_seconds() -> float:
+    raw = os.getenv("ZHC_DISPATCH_RETRY_JITTER_SECONDS", "0.3").strip()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.3
+
+
+def dispatch_timeout_seconds() -> int:
+    raw = os.getenv("ZHC_DISPATCH_TIMEOUT_SECONDS", "900").strip()
+    try:
+        return max(30, int(raw))
+    except ValueError:
+        return 900
+
+
 def payload_hash(payload: dict[str, Any]) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def is_transient_dispatch_error(error_text: str) -> bool:
+    text = error_text.lower()
+    markers = (
+        "timed out",
+        "timeout",
+        "temporarily unavailable",
+        "connection reset",
+        "broken pipe",
+        "resource temporarily unavailable",
+        "too many requests",
+        "service unavailable",
+    )
+    return any(marker in text for marker in markers)
 
 
 def evaluate_execution_policy(
@@ -492,7 +540,43 @@ def append_task_event(task_id: str, detail: str, db_path: Path) -> None:
 
 
 def run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, capture_output=True, text=True)
+    timeout_s = dispatch_timeout_seconds()
+    retry_max = dispatch_retry_max()
+    backoff_s = dispatch_retry_backoff_seconds()
+    jitter_s = dispatch_retry_jitter_seconds()
+
+    attempts = max(1, retry_max + 1)
+    last_proc: subprocess.CompletedProcess[str] | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            proc = subprocess.CompletedProcess(
+                args=cmd,
+                returncode=124,
+                stdout="",
+                stderr=f"dispatch_timeout after {timeout_s}s",
+            )
+
+        if proc.returncode == 0:
+            return proc
+
+        err = (proc.stderr or proc.stdout or "").strip()
+        last_proc = proc
+        if attempt >= attempts or not is_transient_dispatch_error(err):
+            return proc
+
+        sleep_s = backoff_s * (2 ** (attempt - 1))
+        sleep_s += random.uniform(0.0, jitter_s)
+        time.sleep(max(0.05, sleep_s))
+
+    return last_proc or subprocess.CompletedProcess(cmd, 1, "", "dispatch_failed")
 
 
 def task_dir(task_id: str) -> Path:

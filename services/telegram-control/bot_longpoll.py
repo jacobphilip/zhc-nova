@@ -8,6 +8,7 @@ import atexit
 import hashlib
 import json
 import os
+import random
 import subprocess
 import sys
 import time
@@ -69,6 +70,10 @@ class Config:
     rate_limit_per_minute: int
     rate_limit_burst: int
     max_backoff_seconds: float
+    api_call_timeout_seconds: int
+    command_retry_max: int
+    command_retry_backoff_seconds: float
+    command_retry_jitter_seconds: float
 
 
 def load_config() -> Config:
@@ -103,6 +108,16 @@ def load_config() -> Config:
         rate_limit_per_minute=int(os.getenv("TELEGRAM_RATE_LIMIT_PER_MINUTE", "20")),
         rate_limit_burst=int(os.getenv("TELEGRAM_RATE_LIMIT_BURST", "5")),
         max_backoff_seconds=float(os.getenv("TELEGRAM_MAX_BACKOFF_SECONDS", "60")),
+        api_call_timeout_seconds=int(
+            os.getenv("TELEGRAM_API_CALL_TIMEOUT_SECONDS", "15")
+        ),
+        command_retry_max=max(0, int(os.getenv("TELEGRAM_COMMAND_RETRY_MAX", "1"))),
+        command_retry_backoff_seconds=float(
+            os.getenv("TELEGRAM_COMMAND_RETRY_BACKOFF_SECONDS", "0.75")
+        ),
+        command_retry_jitter_seconds=float(
+            os.getenv("TELEGRAM_COMMAND_RETRY_JITTER_SECONDS", "0.25")
+        ),
     )
 
 
@@ -153,10 +168,13 @@ def telegram_api(
     url = f"{config.api_base}/{method}"
     data = urllib.parse.urlencode(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
+    timeout_seconds = (
+        config.timeout_seconds + 5
+        if method == "getUpdates"
+        else max(1, config.api_call_timeout_seconds)
+    )
     try:
-        with urllib.request.urlopen(
-            req, timeout=config.timeout_seconds + 5
-        ) as response:
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
             out = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"telegram_api_error method={method}: {exc}") from exc
@@ -226,39 +244,87 @@ def allow_message(
     return True
 
 
-def run_json_command(cmd: list[str], timeout_seconds: int) -> dict[str, Any]:
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=max(1, timeout_seconds),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"command_timeout after {timeout_seconds}s") from exc
-    if proc.returncode != 0:
-        raise RuntimeError(
-            proc.stderr.strip() or proc.stdout.strip() or "command failed"
-        )
-    try:
-        return json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"invalid_json_output: {proc.stdout[:200]}") from exc
+def is_transient_command_error(error_text: str) -> bool:
+    text = error_text.lower()
+    transient_markers = (
+        "command_timeout",
+        "database is locked",
+        "temporarily unavailable",
+        "connection reset",
+        "broken pipe",
+        "timed out",
+        "too many requests",
+        "service unavailable",
+    )
+    return any(marker in text for marker in transient_markers)
 
 
-def router_cmd(args: list[str], timeout_seconds: int) -> dict[str, Any]:
+def run_json_command(
+    cmd: list[str],
+    timeout_seconds: int,
+    retry_max: int,
+    retry_backoff_seconds: float,
+    retry_jitter_seconds: float,
+) -> dict[str, Any]:
+    attempts = max(1, retry_max + 1)
+    last_err = "command failed"
+    for attempt in range(1, attempts + 1):
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=max(1, timeout_seconds),
+            )
+            if proc.returncode == 0:
+                try:
+                    return json.loads(proc.stdout)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(
+                        f"invalid_json_output: {proc.stdout[:200]}"
+                    ) from exc
+
+            err = proc.stderr.strip() or proc.stdout.strip() or "command failed"
+            last_err = err
+            if attempt >= attempts or not is_transient_command_error(err):
+                raise RuntimeError(err)
+        except subprocess.TimeoutExpired:
+            last_err = f"command_timeout after {timeout_seconds}s"
+            if attempt >= attempts:
+                raise RuntimeError(last_err)
+
+        sleep_s = max(0.05, retry_backoff_seconds) * (2 ** (attempt - 1))
+        sleep_s += random.uniform(0.0, max(0.0, retry_jitter_seconds))
+        time.sleep(sleep_s)
+
+    raise RuntimeError(last_err)
+
+
+def router_cmd(config: Config, args: list[str], timeout_seconds: int) -> dict[str, Any]:
     cmd = [sys.executable, str(repo_root() / "services/task-router/router.py"), *args]
-    return run_json_command(cmd, timeout_seconds)
+    return run_json_command(
+        cmd,
+        timeout_seconds,
+        config.command_retry_max,
+        config.command_retry_backoff_seconds,
+        config.command_retry_jitter_seconds,
+    )
 
 
-def registry_cmd(args: list[str], timeout_seconds: int) -> Any:
+def registry_cmd(config: Config, args: list[str], timeout_seconds: int) -> Any:
     cmd = [
         sys.executable,
         str(repo_root() / "shared/task-registry/task_registry.py"),
         "--json",
         *args,
     ]
-    return run_json_command(cmd, timeout_seconds)
+    return run_json_command(
+        cmd,
+        timeout_seconds,
+        config.command_retry_max,
+        config.command_retry_backoff_seconds,
+        config.command_retry_jitter_seconds,
+    )
 
 
 def user_label(message: dict[str, Any]) -> str:
@@ -317,6 +383,7 @@ def handle_command(
         task_type = args[0]
         prompt = " ".join(args[1:])
         result = router_cmd(
+            config,
             ["route", "--task-type", task_type, "--prompt", prompt],
             config.command_timeout_seconds,
         )
@@ -332,7 +399,7 @@ def handle_command(
         if len(args) != 1:
             raise ValueError("Usage: /status <task_id>")
         task = registry_cmd(
-            ["get", "--task-id", args[0]], config.command_timeout_seconds
+            config, ["get", "--task-id", args[0]], config.command_timeout_seconds
         )
         approvals = task.get("approvals", [])
         approval_status = approvals[-1]["status"] if approvals else "none"
@@ -348,7 +415,7 @@ def handle_command(
         if args:
             limit = max(1, min(50, int(args[0])))
         tasks = registry_cmd(
-            ["list", "--limit", str(limit)], config.command_timeout_seconds
+            config, ["list", "--limit", str(limit)], config.command_timeout_seconds
         )
         if not isinstance(tasks, list):
             raise RuntimeError("invalid list response from task registry")
@@ -364,6 +431,7 @@ def handle_command(
         action_category = args[1]
         note = " ".join(args[2:]) if len(args) > 2 else "approved via telegram"
         result = router_cmd(
+            config,
             [
                 "approve",
                 "--task-id",
@@ -389,6 +457,7 @@ def handle_command(
         task_id = args[0]
         summary = " ".join(args[1:])
         result = router_cmd(
+            config,
             [
                 "record-plan",
                 "--task-id",
@@ -439,6 +508,7 @@ def handle_command(
             }
 
         result = router_cmd(
+            config,
             [
                 "record-review",
                 "--task-id",
@@ -477,6 +547,7 @@ def handle_command(
             int(os.getenv("TELEGRAM_RESUME_TIMEOUT_SECONDS", "600")),
         )
         result = router_cmd(
+            config,
             ["resume", "--task-id", args[0], "--requested-by", actor],
             resume_timeout,
         )
@@ -489,11 +560,12 @@ def handle_command(
         if len(args) != 1:
             raise ValueError("Usage: /stop <task_id>")
         task = registry_cmd(
-            ["get", "--task-id", args[0]], config.command_timeout_seconds
+            config, ["get", "--task-id", args[0]], config.command_timeout_seconds
         )
         if task.get("status") in {"succeeded", "failed", "cancelled"}:
             return f"Task {args[0]} already terminal: {task.get('status')}", task
         result = registry_cmd(
+            config,
             [
                 "update",
                 "--task-id",
@@ -508,7 +580,11 @@ def handle_command(
         return f"Task {args[0]} cancelled", result
 
     if cmd == "/board":
-        tasks = registry_cmd(["list", "--limit", "50"], config.command_timeout_seconds)
+        tasks = registry_cmd(
+            config,
+            ["list", "--limit", "50"],
+            config.command_timeout_seconds,
+        )
         if not isinstance(tasks, list):
             raise RuntimeError("invalid list response from task registry")
         counts: dict[str, int] = {}
@@ -556,6 +632,7 @@ def process_update(
             return
         try:
             registry_cmd(
+                config,
                 [
                     "idempo-complete",
                     "--key",
@@ -581,6 +658,7 @@ def process_update(
 
     if idempo_key:
         begin = registry_cmd(
+            config,
             [
                 "idempo-begin",
                 "--key",
@@ -710,6 +788,10 @@ def main() -> int:
                 "status": "startup",
                 "allowed_chat_ids_count": len(config.allowed_ids),
                 "command_timeout_seconds": config.command_timeout_seconds,
+                "api_call_timeout_seconds": config.api_call_timeout_seconds,
+                "command_retry_max": config.command_retry_max,
+                "command_retry_backoff_seconds": config.command_retry_backoff_seconds,
+                "command_retry_jitter_seconds": config.command_retry_jitter_seconds,
             },
         )
         poll_loop(config)
