@@ -4,17 +4,17 @@
     "Improve planner/reviewer quality: increase gate pass rate above 80%.",
     "Enforce complete reviewer checklist schema on all heavy-task reviews."
   ],
-  "generated_at": "2026-02-25T16:32:22.733996+00:00",
+  "generated_at": "2026-02-25T16:52:21.489954+00:00",
   "iteration": "latest",
   "summary": {
     "approvals": {
       "approval_status_counts": {
-        "approved": 6,
+        "approved": 7,
         "rejected": 1,
         "required": 2
       },
-      "median_approval_latency_minutes": 0.01,
-      "p90_approval_latency_minutes": 0.14
+      "median_approval_latency_minutes": 0.03,
+      "p90_approval_latency_minutes": 0.41
     },
     "policy": {
       "policy_block_count": 3,
@@ -25,64 +25,111 @@
       }
     },
     "review_gate": {
-      "fail_then_pass_count": 1,
+      "fail_then_pass_count": 2,
       "gate_fail_count": 0,
       "gate_missing_count": 4,
-      "gate_pass_count": 5,
-      "gate_pass_rate": 0.5556,
-      "heavy_task_count": 9,
+      "gate_pass_count": 6,
+      "gate_pass_rate": 0.6,
+      "heavy_task_count": 10,
       "median_gate_latency_minutes": 0.01,
       "p90_gate_latency_minutes": 0.41,
       "review_reason_counts": {},
-      "review_schema_complete_count": 2,
-      "review_schema_complete_rate": 0.2222
+      "review_schema_complete_count": 3,
+      "review_schema_complete_rate": 0.3
     },
     "task_flow": {
       "risk_counts": {
         "high": 3,
-        "low": 18,
-        "medium": 8
+        "low": 21,
+        "medium": 9
       },
       "route_counts": {
-        "PI_LIGHT": 20,
-        "UBUNTU_HEAVY": 9
+        "PI_LIGHT": 23,
+        "UBUNTU_HEAVY": 10
       },
       "status_counts": {
         "blocked": 8,
         "cancelled": 1,
-        "failed": 6,
-        "succeeded": 14
+        "failed": 7,
+        "succeeded": 17
       },
-      "task_count": 29
+      "task_count": 33
     },
     "telegram": {
-      "command_count": 0,
-      "command_counts": {},
-      "command_status_counts": {},
+      "command_count": 16,
+      "command_counts": {
+        "/approve": 1,
+        "/board": 1,
+        "/help": 1,
+        "/list": 1,
+        "/newtask": 4,
+        "/plan": 1,
+        "/resume": 2,
+        "/review": 2,
+        "/start": 2,
+        "/status": 1
+      },
+      "command_status_counts": {
+        "/approve": {
+          "ok": 1
+        },
+        "/board": {
+          "ok": 1
+        },
+        "/help": {
+          "ok": 1
+        },
+        "/list": {
+          "ok": 1
+        },
+        "/newtask": {
+          "ok": 4
+        },
+        "/plan": {
+          "ok": 1
+        },
+        "/resume": {
+          "ok": 2
+        },
+        "/review": {
+          "ok": 2
+        },
+        "/start": {
+          "error": 1,
+          "ok": 1
+        },
+        "/status": {
+          "ok": 1
+        }
+      },
       "command_timeout_count": 0,
-      "error_rate": 0,
+      "error_rate": 0.0526,
       "poll_error_count": 0,
-      "status_counts": {},
-      "success_rate": 0,
+      "status_counts": {
+        "error": 1,
+        "ok": 15,
+        "startup": 3
+      },
+      "success_rate": 0.7895,
       "unauthorized_count": 0
     },
     "telemetry": {
-      "avg_compression_ratio": 0.7074,
-      "avg_dispatch_duration_ms": 7.46,
-      "avg_estimated_cost_usd": 0.001413,
-      "avg_estimated_tokens": 81.14,
+      "avg_compression_ratio": 0.6931,
+      "avg_dispatch_duration_ms": 7.35,
+      "avg_estimated_cost_usd": 0.001242,
+      "avg_estimated_tokens": 94.03,
       "cost_source_counts": {
         "heuristic": 5,
-        "openrouter_api": 7,
+        "openrouter_api": 11,
         "unknown": 17
       },
       "p90_dispatch_duration_ms": 23.0,
       "total_estimated_cost_usd": 0.040989,
-      "total_estimated_tokens": 2353
+      "total_estimated_tokens": 3103
     }
   },
   "window": {
-    "end": "2026-02-25T16:32:22.732072+00:00",
-    "start": "2026-02-18T16:32:22.732072+00:00"
+    "end": "2026-02-25T16:52:21.487357+00:00",
+    "start": "2026-02-18T16:52:21.487357+00:00"
   }
 }

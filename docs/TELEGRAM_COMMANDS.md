@@ -4,6 +4,8 @@ Source of truth for service command behavior: `services/telegram-control/command
 
 ## Core Commands
 
+- `/start`
+- `/help`
 - `/newtask <type> <prompt>`
 - `/status <task_id>`
 - `/list [limit]`

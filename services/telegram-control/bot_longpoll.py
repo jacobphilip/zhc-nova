@@ -278,12 +278,32 @@ def format_task_short(task: dict[str, Any]) -> str:
     )
 
 
+def help_text() -> str:
+    return (
+        "ZHC-Nova commands:\n"
+        "/start - show quick start\n"
+        "/help - show command help\n"
+        "/newtask <task_type> <prompt>\n"
+        "/status <task_id>\n"
+        "/list [limit]\n"
+        "/approve <task_id> <action_category> [note]\n"
+        "/plan <task_id> <summary>\n"
+        "/review <task_id> <pass|fail> [reason_code_if_fail] [notes]\n"
+        "/resume <task_id>\n"
+        "/stop <task_id>\n"
+        "/board"
+    )
+
+
 def handle_command(
     config: Config, message: dict[str, Any]
 ) -> tuple[str, dict[str, Any]]:
     text = str(message.get("text", ""))
     cmd, args = parse_command(text)
     actor = user_label(message)
+
+    if cmd in {"/start", "/help"}:
+        return help_text(), {"command": cmd, "ok": True}
 
     if cmd == "/newtask":
         if len(args) < 2:

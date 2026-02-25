@@ -17,6 +17,13 @@ Example:
 /newtask code_refactor Refactor weather ingestion worker for reliability
 ```
 
+## /start and /help
+
+`/start`
+`/help`
+
+- Returns command list and usage summary.
+
 ## /status
 
 `/status <task_id>`
