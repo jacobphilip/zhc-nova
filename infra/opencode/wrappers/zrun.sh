@@ -64,6 +64,17 @@ STORAGE_ROOT="${ZHC_STORAGE_ROOT:-storage}"
 TASK_DIR="${STORAGE_ROOT}/tasks/${TASK_ID}"
 mkdir -p "$TASK_DIR"
 
+AUTONOMY_MODE="${ZHC_AUTONOMY_MODE:-supervised}"
+if [[ "$AUTONOMY_MODE" != "readonly" && "$AUTONOMY_MODE" != "supervised" && "$AUTONOMY_MODE" != "auto" ]]; then
+  echo "ERROR: Invalid ZHC_AUTONOMY_MODE '$AUTONOMY_MODE' (allowed: readonly|supervised|auto)" >&2
+  exit 2
+fi
+
+if [[ "$AUTONOMY_MODE" == "readonly" ]]; then
+  echo "ERROR: execution blocked by ZHC_AUTONOMY_MODE=readonly" >&2
+  exit 1
+fi
+
 PROVIDER="${ZHC_DEFAULT_PROVIDER:-openai}"
 MODEL="${ZHC_DEFAULT_MODEL:-codex}"
 
@@ -84,6 +95,7 @@ META_JSON="$TASK_DIR/meta.json"
   echo "task_type=$TASK_TYPE"
   echo "provider=$PROVIDER"
   echo "model=$MODEL"
+  echo "autonomy_mode=$AUTONOMY_MODE"
   echo "repo=${REPO_PATH:-unset}"
   echo "worktree=${WORKTREE_PATH:-unset}"
   echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"

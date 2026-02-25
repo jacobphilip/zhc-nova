@@ -37,6 +37,20 @@ python3 shared/task-registry/task_registry.py get --task-id <task_id>
 ./scripts/healthcheck.sh
 ```
 
+## Autonomy Modes
+
+- `readonly`: tasks can be created/classified but execution is blocked.
+- `supervised` (default): all `UBUNTU_HEAVY` tasks require approval before dispatch; high-risk tasks remain gated.
+- `auto`: non-gated tasks execute immediately; high-risk tasks still require approval.
+
+Mode override examples:
+
+```bash
+ZHC_AUTONOMY_MODE=readonly python3 services/task-router/router.py route --task-type ping --prompt "status check"
+ZHC_AUTONOMY_MODE=supervised python3 services/task-router/router.py route --task-type code_refactor --prompt "refactor parser"
+ZHC_AUTONOMY_MODE=auto python3 services/task-router/router.py route --task-type ping --prompt "status check"
+```
+
 ## Logs and Artifacts
 
 - Task logs/artifacts: `storage/tasks/<task_id>/`

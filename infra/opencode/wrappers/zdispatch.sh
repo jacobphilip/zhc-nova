@@ -50,6 +50,17 @@ if [[ -z "$TASK_TYPE" || -z "$PROMPT" ]]; then
   exit 2
 fi
 
+AUTONOMY_MODE="${ZHC_AUTONOMY_MODE:-supervised}"
+if [[ "$AUTONOMY_MODE" != "readonly" && "$AUTONOMY_MODE" != "supervised" && "$AUTONOMY_MODE" != "auto" ]]; then
+  echo "ERROR: Invalid ZHC_AUTONOMY_MODE '$AUTONOMY_MODE' (allowed: readonly|supervised|auto)" >&2
+  exit 2
+fi
+
+if [[ "$AUTONOMY_MODE" == "readonly" ]]; then
+  echo "ERROR: dispatch blocked by ZHC_AUTONOMY_MODE=readonly" >&2
+  exit 1
+fi
+
 UBUNTU_HOST="${ZHC_UBUNTU_HOST:-}"
 REMOTE_REPO="${ZHC_REMOTE_REPO:-}"
 
@@ -66,6 +77,7 @@ WORKTREE_B64=$(printf '%s' "$WORKTREE_PATH" | base64 -w 0)
 
 REMOTE_CMD="set -euo pipefail; \
 mkdir -p '$REMOTE_REPO/storage/tasks/$TASK_ID'; \
+ZHC_AUTONOMY_MODE='$AUTONOMY_MODE'; \
 PROMPT=\$(printf '%s' '$PROMPT_B64' | base64 -d); \
 REPO=\$(printf '%s' '$REPO_B64' | base64 -d); \
 WORKTREE=\$(printf '%s' '$WORKTREE_B64' | base64 -d); \

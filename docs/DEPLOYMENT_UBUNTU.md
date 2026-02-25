@@ -22,7 +22,14 @@ Set or confirm in `.env`:
 - `ZHC_TASK_DB` path to SQLite database
 - `ZHC_STORAGE_ROOT` path to `storage/`
 - `ZHC_ROUTING_POLICY` and `ZHC_APPROVAL_POLICY`
+- `ZHC_AUTONOMY_MODE` (`readonly`, `supervised`, `auto`)
 - `ZHC_ENABLE_REAL_OPENCODE=1` only when real OpenCode command integration is ready
+
+Autonomy mode behavior:
+
+- `readonly`: create/classify tasks only, block all execution/dispatch.
+- `supervised` (default): require approval for all `UBUNTU_HEAVY` tasks and all high-risk actions.
+- `auto`: allow non-gated tasks to execute immediately; high-risk actions still require approval.
 
 ## Service Startup (dev mode)
 

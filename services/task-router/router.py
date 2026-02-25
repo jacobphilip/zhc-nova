@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Any
 
 
+VALID_AUTONOMY_MODES = {"readonly", "supervised", "auto"}
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -105,6 +108,14 @@ def action_category_for_task(task_type: str, risk_level: str) -> str:
     return "none"
 
 
+def autonomy_mode() -> str:
+    mode = os.getenv("ZHC_AUTONOMY_MODE", "supervised").strip().lower()
+    if mode not in VALID_AUTONOMY_MODES:
+        allowed = ", ".join(sorted(VALID_AUTONOMY_MODES))
+        raise ValueError(f"Invalid ZHC_AUTONOMY_MODE '{mode}'. Allowed: {allowed}")
+    return mode
+
+
 def run_registry(args: list[str], db_path: Path) -> dict[str, Any]:
     cmd = [
         sys.executable,
@@ -137,8 +148,15 @@ def run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def dispatch(
-    route_class: str, task_type: str, prompt: str, task_id: str
+    route_class: str,
+    task_type: str,
+    prompt: str,
+    task_id: str,
+    mode: str,
 ) -> tuple[str, str]:
+    if mode == "readonly":
+        return "blocked", "readonly_mode_execution_disabled"
+
     if route_class == "UBUNTU_HEAVY":
         cmd = [
             str(repo_root() / "infra/opencode/wrappers/zdispatch.sh"),
@@ -189,13 +207,20 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
     ).resolve()
 
     route_class, risk_level = classify(task_type, prompt, routing_policy)
+    mode = autonomy_mode()
     approval_required = requires_approval(risk_level, task_type, approval_policy)
     action_category = action_category_for_task(task_type, risk_level)
 
-    task_id = f"task-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    if mode == "supervised" and route_class == "UBUNTU_HEAVY":
+        approval_required = True
+        if action_category == "none":
+            action_category = "supervised_heavy_execution"
+
+    task_id = f"task-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
     metadata = {
         "source": "router_v1",
         "approval_required": approval_required,
+        "autonomy_mode": mode,
     }
 
     create_payload = run_registry(
@@ -221,6 +246,31 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
     append_task_event(
         task_id, f"classification route={route_class} risk={risk_level}", db_path
     )
+
+    if mode == "readonly":
+        run_registry(
+            [
+                "update",
+                "--task-id",
+                task_id,
+                "--status",
+                "blocked",
+                "--detail",
+                "readonly_mode_execution_disabled",
+            ],
+            db_path,
+        )
+        append_task_event(task_id, "autonomy_mode=readonly blocked execution", db_path)
+        return {
+            "task_id": task_id,
+            "status": "blocked",
+            "route_class": route_class,
+            "risk_level": risk_level,
+            "approval_required": False,
+            "autonomy_mode": mode,
+            "message": "Task created but execution blocked by readonly autonomy mode",
+            "created": create_payload.get("created_at"),
+        }
 
     if approval_required:
         run_registry(
@@ -257,10 +307,13 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "risk_level": risk_level,
             "approval_required": True,
             "action_category": action_category,
+            "autonomy_mode": mode,
             "message": "Task created and blocked pending approval",
         }
 
-    dispatch_status, dispatch_detail = dispatch(route_class, task_type, prompt, task_id)
+    dispatch_status, dispatch_detail = dispatch(
+        route_class, task_type, prompt, task_id, mode
+    )
     run_registry(
         [
             "update",
@@ -281,6 +334,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         "route_class": route_class,
         "risk_level": risk_level,
         "approval_required": False,
+        "autonomy_mode": mode,
         "message": dispatch_detail,
         "created": create_payload.get("created_at"),
     }
@@ -293,6 +347,10 @@ def approve_task(
     note: str,
     decision: str,
 ) -> dict[str, Any]:
+    mode = autonomy_mode()
+    if mode == "readonly":
+        raise ValueError("Cannot approve/resume tasks while ZHC_AUTONOMY_MODE=readonly")
+
     db_path = Path(
         os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
     ).resolve()
@@ -345,7 +403,7 @@ def approve_task(
         }
 
     dispatch_status, dispatch_detail = dispatch(
-        task["route_class"], task["task_type"], task["prompt"], task_id
+        task["route_class"], task["task_type"], task["prompt"], task_id, mode
     )
     run_registry(
         [
@@ -373,6 +431,7 @@ def approve_task(
         "status": dispatch_status,
         "action_category": action_category,
         "decision": decision,
+        "autonomy_mode": mode,
         "message": dispatch_detail,
     }
 
@@ -424,15 +483,20 @@ def main() -> int:
         )
 
         if args.command == "classify":
+            mode = autonomy_mode()
             route_class, risk_level = classify(
                 args.task_type, args.prompt, routing_policy
             )
+            approval_required = requires_approval(
+                risk_level, args.task_type, approval_policy
+            )
+            if mode == "supervised" and route_class == "UBUNTU_HEAVY":
+                approval_required = True
             out = {
                 "route_class": route_class,
                 "risk_level": risk_level,
-                "approval_required": requires_approval(
-                    risk_level, args.task_type, approval_policy
-                ),
+                "approval_required": approval_required,
+                "autonomy_mode": mode,
             }
             print(json.dumps(out, indent=2, sort_keys=True))
             return 0
