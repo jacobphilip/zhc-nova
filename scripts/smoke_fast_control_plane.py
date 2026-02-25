@@ -59,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         default=str(ROOT / ".env"),
         help="Env file to load before running tests",
     )
+    parser.add_argument(
+        "--real-exec",
+        action="store_true",
+        help="Use real heavy execution path (default uses fast stub mode)",
+    )
     return parser.parse_args()
 
 
@@ -162,7 +167,10 @@ def count_dispatch_events(task: dict[str, Any]) -> int:
     return count
 
 
-def run_sequence() -> dict[str, Any]:
+def run_sequence(real_exec: bool) -> dict[str, Any]:
+    if not real_exec:
+        os.environ["ZHC_ENABLE_REAL_OPENCODE"] = "0"
+
     mod = runpy.run_path(str(BOT_PATH))
     load_config = mod["load_config"]
     process_update = mod["process_update"]
@@ -306,7 +314,7 @@ def main() -> int:
     load_env_file(Path(args.env_file).resolve())
     started = time.time()
     pre = {} if args.mode == "simulation" else service_health()
-    sequence = run_sequence()
+    sequence = run_sequence(args.real_exec)
     post = {} if args.mode == "simulation" else service_health()
     duration = round(time.time() - started, 2)
 
@@ -332,6 +340,7 @@ def main() -> int:
     summary = {
         "ok": passed,
         "mode": args.mode,
+        "real_exec": args.real_exec,
         "duration_seconds": duration,
         "service_health_pre": pre,
         "service_health_post": post,

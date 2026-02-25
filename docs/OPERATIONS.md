@@ -181,6 +181,12 @@ python3 scripts/smoke_fast_control_plane.py --mode full --json --output storage/
 ```
 
 - Pass condition: JSON output contains `"ok": true`.
+- Default harness mode forces stubbed heavy execution (`ZHC_ENABLE_REAL_OPENCODE=0`) for speed.
+- Use `--real-exec` to exercise real heavy execution path.
+
+```bash
+python3 scripts/smoke_fast_control_plane.py --mode full --real-exec --json
+```
 
 ## Ubuntu Single-Node Alive Checklist
 

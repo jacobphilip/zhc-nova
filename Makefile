@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast test-control
 
 init-dev:
 	./scripts/init_dev.sh
@@ -38,3 +38,6 @@ user-services:
 
 smoke-fast:
 	python3 scripts/smoke_fast_control_plane.py --mode full
+
+test-control:
+	python3 tests/test_control_plane_invariants.py

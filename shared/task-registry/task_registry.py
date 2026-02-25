@@ -13,6 +13,45 @@ from pathlib import Path
 from typing import Any
 
 
+VALID_TASK_STATUSES = {
+    "requested",
+    "pending",
+    "approved",
+    "queued",
+    "running",
+    "blocked",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "canceled",
+    "expired",
+}
+
+TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "canceled", "expired"}
+
+ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "requested": {"approved", "queued", "running", "blocked", "cancelled", "failed"},
+    "pending": {"approved", "queued", "running", "blocked", "cancelled", "failed"},
+    "approved": {"queued", "running", "blocked", "cancelled", "failed"},
+    "queued": {"running", "blocked", "cancelled", "failed", "expired"},
+    "running": {"succeeded", "failed", "blocked", "cancelled", "expired"},
+    "blocked": {
+        "approved",
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "expired",
+    },
+    "succeeded": {"succeeded"},
+    "failed": {"failed"},
+    "cancelled": {"cancelled"},
+    "canceled": {"canceled"},
+    "expired": {"expired"},
+}
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -97,17 +136,49 @@ def create_task(
 
 
 def update_task(
-    db_path: Path, task_id: str, status: str, detail: str | None
+    db_path: Path,
+    task_id: str,
+    status: str,
+    detail: str | None,
+    force: bool = False,
 ) -> dict[str, Any]:
     now = utc_now()
+    next_status = status.strip().lower()
+    if next_status not in VALID_TASK_STATUSES:
+        raise ValueError(f"Invalid status: {status}")
+
     with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            raise KeyError(f"Task not found: {task_id}")
+
+        current_status = str(row["status"]).strip().lower()
+        if current_status == "canceled":
+            current_status = "cancelled"
+        if next_status == "canceled":
+            next_status = "cancelled"
+
+        if not force:
+            allowed = ALLOWED_STATUS_TRANSITIONS.get(current_status)
+            if allowed is None:
+                raise ValueError(
+                    f"Unknown current status '{current_status}' for task {task_id}; use --force to override"
+                )
+            if next_status not in allowed:
+                raise ValueError(
+                    f"Invalid status transition for {task_id}: {current_status} -> {next_status}"
+                )
+
         cur = conn.execute(
             "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
-            (status, now, task_id),
+            (next_status, now, task_id),
         )
         if cur.rowcount == 0:
             raise KeyError(f"Task not found: {task_id}")
-        append_event(conn, task_id, "status_updated", detail or status)
+        append_event(conn, task_id, "status_updated", detail or next_status)
         conn.commit()
     return get_task(db_path, task_id)
 
@@ -496,6 +567,11 @@ def parse_args() -> argparse.Namespace:
     p_update.add_argument("--task-id", required=True)
     p_update.add_argument("--status", required=True)
     p_update.add_argument("--detail", default="")
+    p_update.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow transition override (for controlled recovery)",
+    )
 
     p_get = sub.add_parser("get", help="Get task details")
     p_get.add_argument("--task-id", required=True)
@@ -573,7 +649,13 @@ def main() -> int:
             return 0
 
         if args.command == "update":
-            result = update_task(db_path, args.task_id, args.status, args.detail)
+            result = update_task(
+                db_path,
+                args.task_id,
+                args.status,
+                args.detail,
+                force=args.force,
+            )
             print_out(result, args.json)
             return 0
 

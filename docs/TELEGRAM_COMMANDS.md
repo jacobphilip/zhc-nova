@@ -25,5 +25,6 @@ Source of truth for service command behavior: `services/telegram-control/command
 - All high-risk actions require approval gate checks.
 - `/approve` records approval; `/resume` performs execution.
 - Rejected approvals cancel blocked tasks.
+- Repeated `/resume` on already terminal/in-progress tasks is treated as a safe no-op.
 - `UBUNTU_HEAVY` tasks require planner/reviewer artifacts (review verdict `pass`) before resume.
 - Reviewer fail reason codes: `policy_conflict`, `missing_tests`, `insufficient_plan`, `high_risk_unmitigated`, `artifact_incomplete`, `other`.

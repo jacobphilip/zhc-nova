@@ -931,6 +931,31 @@ def dispatch_task_if_ready(
         db_path,
     )
 
+    run_registry(
+        [
+            "update",
+            "--task-id",
+            task["task_id"],
+            "--status",
+            "queued",
+            "--detail",
+            "queued_for_dispatch",
+        ],
+        db_path,
+    )
+    run_registry(
+        [
+            "update",
+            "--task-id",
+            task["task_id"],
+            "--status",
+            "running",
+            "--detail",
+            "dispatch_started",
+        ],
+        db_path,
+    )
+
     dispatch_started = time.perf_counter()
     dispatch_status, dispatch_detail = dispatch(
         task["route_class"],
@@ -1095,7 +1120,26 @@ def resume_task(task_id: str, requested_by: str) -> dict[str, Any]:
         os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
     ).resolve()
     task = run_registry(["get", "--task-id", task_id], db_path)
-    if task.get("status") != "blocked":
+    status = str(task.get("status", "")).strip().lower()
+    if status in {"succeeded", "failed", "cancelled", "expired"}:
+        append_task_event(task_id, f"resume_noop terminal_status={status}", db_path)
+        return {
+            "task_id": task_id,
+            "status": status,
+            "autonomy_mode": mode,
+            "runtime_mode": runtime_mode(),
+            "message": f"Task already terminal: {status}",
+        }
+    if status in {"running", "queued"}:
+        append_task_event(task_id, f"resume_noop already_{status}", db_path)
+        return {
+            "task_id": task_id,
+            "status": status,
+            "autonomy_mode": mode,
+            "runtime_mode": runtime_mode(),
+            "message": f"Task already in progress: {status}",
+        }
+    if status != "blocked":
         raise ValueError(f"Task {task_id} must be blocked before resume")
 
     result = dispatch_task_if_ready(task, mode, db_path)

@@ -195,6 +195,16 @@ def append_audit(path: Path, payload: dict[str, Any]) -> None:
         f.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
+def audit_seen_update(path: Path, update_id: int) -> bool:
+    if update_id <= 0 or not path.exists():
+        return False
+    marker = f'"update_id": {update_id}'
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if marker in line:
+            return True
+    return False
+
+
 def allow_message(
     buckets: dict[int, list[float]], chat_id: int, config: Config, now_ts: float
 ) -> bool:
@@ -525,6 +535,9 @@ def process_update(
     config: Config, update: dict[str, Any], rate_buckets: dict[int, list[float]]
 ) -> None:
     update_id = int(update.get("update_id", 0))
+    if audit_seen_update(config.audit_log, update_id):
+        return
+
     message = update.get("message") or update.get("edited_message")
     if not isinstance(message, dict):
         return
@@ -536,6 +549,7 @@ def process_update(
 
     audit_payload: dict[str, Any] = {
         "ts": utc_now(),
+        "trace_id": f"tg-{update_id}",
         "update_id": update_id,
         "chat_id": chat_id,
         "actor": actor,
