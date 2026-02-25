@@ -40,6 +40,9 @@ python3 shared/task-registry/task_registry.py list --limit 20
 # Telemetry summary (cost/latency estimates)
 python3 shared/task-registry/task_registry.py --json telemetry --limit 20
 
+# Closed-loop metrics report
+python3 scripts/metrics_report.py --days 7 --iteration latest --output-json docs/audits/metrics/latest_metrics.json --output-md docs/audits/metrics/latest_metrics.md
+
 # Get task
 python3 shared/task-registry/task_registry.py get --task-id <task_id>
 

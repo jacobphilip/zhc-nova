@@ -1,0 +1,82 @@
+{
+  "actions": [
+    "Tune execution policy allowlists/keywords to reduce unnecessary policy blocks.",
+    "Improve planner/reviewer quality: increase gate pass rate above 80%.",
+    "Enable OpenRouter pricing enrichment to improve cost signal quality.",
+    "Improve context compaction effectiveness (target lower average compression ratio)."
+  ],
+  "generated_at": "2026-02-25T15:56:25.739904+00:00",
+  "iteration": "2026-02-25-v1.1",
+  "summary": {
+    "approvals": {
+      "approval_status_counts": {
+        "approved": 4,
+        "rejected": 1,
+        "required": 2
+      },
+      "median_approval_latency_minutes": 0.01,
+      "p90_approval_latency_minutes": 0.14
+    },
+    "policy": {
+      "policy_block_count": 3,
+      "policy_reason_counts": {
+        "blocked_prompt_keyword": 1,
+        "readonly_mode": 1,
+        "unknown_task_type": 1
+      }
+    },
+    "review_gate": {
+      "gate_fail_count": 0,
+      "gate_missing_count": 6,
+      "gate_pass_count": 1,
+      "gate_pass_rate": 0.1429,
+      "heavy_task_count": 7,
+      "median_gate_latency_minutes": 0.01,
+      "p90_gate_latency_minutes": 0.01
+    },
+    "task_flow": {
+      "risk_counts": {
+        "high": 3,
+        "low": 10,
+        "medium": 6
+      },
+      "route_counts": {
+        "PI_LIGHT": 12,
+        "UBUNTU_HEAVY": 7
+      },
+      "status_counts": {
+        "blocked": 8,
+        "cancelled": 1,
+        "failed": 4,
+        "succeeded": 6
+      },
+      "task_count": 19
+    },
+    "telegram": {
+      "command_count": 0,
+      "command_counts": {},
+      "error_rate": 0,
+      "status_counts": {},
+      "success_rate": 0,
+      "unauthorized_count": 0
+    },
+    "telemetry": {
+      "avg_compression_ratio": 1.0,
+      "avg_dispatch_duration_ms": 17.0,
+      "avg_estimated_cost_usd": 0.001076,
+      "avg_estimated_tokens": 23.74,
+      "cost_source_counts": {
+        "heuristic": 2,
+        "openrouter_api": 0,
+        "unknown": 17
+      },
+      "p90_dispatch_duration_ms": 27.0,
+      "total_estimated_cost_usd": 0.020452,
+      "total_estimated_tokens": 451
+    }
+  },
+  "window": {
+    "end": "2026-02-25T15:56:25.738858+00:00",
+    "start": "2026-02-18T15:56:25.738858+00:00"
+  }
+}

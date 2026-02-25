@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit telegram
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram
 
 init-dev:
 	./scripts/init_dev.sh
@@ -23,6 +23,9 @@ list:
 
 audit:
 	python3 scripts/audit_score.py --scores docs/audits/latest_scores.json --output docs/audits/latest_report.md --iteration latest
+
+metrics:
+	python3 scripts/metrics_report.py --days 7 --iteration latest --output-json docs/audits/metrics/latest_metrics.json --output-md docs/audits/metrics/latest_metrics.md
 
 telegram:
 	python3 services/telegram-control/bot_longpoll.py

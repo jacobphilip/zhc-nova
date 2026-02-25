@@ -86,3 +86,11 @@ See `ROADMAP.md` for milestones from single-node v1 to multi-node swarm orchestr
 
 - Repeatable audit process: `docs/AUDIT_PROCESS.md`
 - Latest rolling audit: `docs/audits/latest_report.md`
+- Closed-loop metrics snapshots: `docs/audits/metrics/latest_metrics.md`
+
+Generate both audit and metrics:
+
+```bash
+make audit
+make metrics
+```

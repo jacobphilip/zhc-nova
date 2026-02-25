@@ -17,6 +17,7 @@ Status snapshot (2026-02-25):
 - Workstream 4: implemented baseline (planner/reviewer gate)
 - Workstream 5: in progress (token-budget context compaction + retrieval sources)
 - Workstream 6: implemented baseline (telemetry metadata + summary command + cost source)
+- Closed-loop metrics job: implemented baseline (`scripts/metrics_report.py` + `make metrics`)
 
 1) Telegram Runtime + Approval Resume
 - Implement real command handlers for `/newtask`, `/status`, `/list`, `/approve`, `/stop`, `/board`.

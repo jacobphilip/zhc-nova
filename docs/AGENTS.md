@@ -57,3 +57,4 @@ CONTEXT (current task & why we need this):
 ## Iteration Audit Requirement
 - Run the source-grounded audit process in `docs/AUDIT_PROCESS.md` at each iteration milestone.
 - Publish scored output into `docs/audits/` (scores JSON + generated report).
+- Generate closed-loop metrics snapshots in `docs/audits/metrics/` before rescoring.

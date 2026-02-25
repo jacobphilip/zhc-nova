@@ -51,10 +51,21 @@ python3 scripts/audit_score.py \
   --notes "Post-implementation audit"
 ```
 
+4) Generate closed-loop metrics report (before or alongside scoring):
+
+```bash
+python3 scripts/metrics_report.py \
+  --days 7 \
+  --iteration 2026-02-25-v1.1 \
+  --output-json docs/audits/metrics/2026-02-25-v1_1_metrics.json \
+  --output-md docs/audits/metrics/2026-02-25-v1_1_metrics.md
+```
+
 Shortcut command for quick reruns:
 
 ```bash
 make audit
+make metrics
 ```
 
 ## Report Requirements

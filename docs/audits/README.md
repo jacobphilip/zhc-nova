@@ -8,6 +8,7 @@ This directory stores iteration-level audit artifacts.
 - `<iteration>_scores.json`: scored input for one iteration.
 - `<iteration>_report.md`: generated weighted report.
 - `latest_scores.json` and `latest_report.md`: optional rolling pointers.
+- `metrics/`: closed-loop operational metrics snapshots.
 
 ## Repeatable Flow
 
@@ -24,4 +25,5 @@ You can also keep `docs/audits/latest_scores.json` updated and run:
 
 ```bash
 make audit
+make metrics
 ```
