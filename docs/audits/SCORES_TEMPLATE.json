@@ -1,0 +1,14 @@
+{
+  "swappable_modular": 0,
+  "secure_by_default": 0,
+  "lightweight_runtime": 0,
+  "provider_local_first": 0,
+  "multi_agent_swarm": 0,
+  "configurable_autonomy": 0,
+  "hybrid_memory_compression": 0,
+  "terminal_daemon_interfaces": 0,
+  "agentic_meta_engineering": 0,
+  "closed_loop_feedback": 0,
+  "cost_optimization": 0,
+  "ethical_auditable_governance": 0
+}

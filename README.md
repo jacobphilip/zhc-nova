@@ -78,3 +78,8 @@ python3 services/task-router/router.py route \
 ## Next Phase
 
 See `ROADMAP.md` for milestones from single-node v1 to multi-node swarm orchestration.
+
+## Iteration Audits
+
+- Repeatable audit process: `docs/AUDIT_PROCESS.md`
+- Latest rolling audit: `docs/audits/latest_report.md`

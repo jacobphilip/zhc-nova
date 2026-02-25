@@ -66,3 +66,22 @@ CONTEXT (current task & why we need this):
 [answer from Grok or GPT]
 
 - Resume exactly where execution paused, incorporating the returned answer.
+
+## Iteration Audit Loop
+
+- Run the repeatable audit process documented in `docs/AUDIT_PROCESS.md` at each milestone.
+- Keep current rolling artifacts in `docs/audits/latest_scores.json` and `docs/audits/latest_report.md`.
+- Archive milestone outputs as dated files in `docs/audits/`.
+
+Audit commands:
+
+```bash
+# update docs/audits/latest_scores.json, then
+make audit
+
+# or generate a dated report
+python3 scripts/audit_score.py \
+  --scores docs/audits/2026-02-25-v1_1_scores.json \
+  --output docs/audits/2026-02-25-v1_1_report.md \
+  --iteration 2026-02-25-v1.1
+```

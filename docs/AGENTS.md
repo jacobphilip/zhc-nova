@@ -53,3 +53,7 @@ CONTEXT (current task & why we need this):
 [answer from Grok or GPT]
 
 - Agents then resume exactly where they stopped and incorporate that response.
+
+## Iteration Audit Requirement
+- Run the source-grounded audit process in `docs/AUDIT_PROCESS.md` at each iteration milestone.
+- Publish scored output into `docs/audits/` (scores JSON + generated report).

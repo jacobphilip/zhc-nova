@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit
 
 init-dev:
 	./scripts/init_dev.sh
@@ -20,3 +20,6 @@ demo-light:
 
 list:
 	python3 shared/task-registry/task_registry.py list --limit 20
+
+audit:
+	python3 scripts/audit_score.py --scores docs/audits/latest_scores.json --output docs/audits/latest_report.md --iteration latest
