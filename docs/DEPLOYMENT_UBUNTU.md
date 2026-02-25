@@ -61,6 +61,29 @@ Autonomy mode behavior:
 python3 services/task-router/router.py route --task-type code_review --prompt "Review irrigation draft"
 ```
 
+## ZeroClaw Gateway Bring-Up (no installer run)
+
+Configure gateway command in `.env`:
+
+```bash
+ZHC_ZEROCLAW_GATEWAY_CMD='zeroclaw gateway --config /opt/zhc-nova/infra/zeroclaw/config/gateway.yaml'
+```
+
+Run preflight (validates env + binary + unit template):
+
+```bash
+./scripts/zeroclaw_preflight.sh
+```
+
+Install/start service when ready:
+
+```bash
+sudo cp infra/zeroclaw/systemd/zeroclaw-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now zeroclaw-gateway.service
+sudo systemctl status zeroclaw-gateway.service
+```
+
 ## TODO Integration Hooks
 
 - TODO: REAL_INTEGRATION - Telegram service startup process.

@@ -7,9 +7,16 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/zhc-nova
 EnvironmentFile=/opt/zhc-nova/.env
-ExecStart=/usr/bin/env bash -lc 'echo "TODO: REAL_INTEGRATION zeroclaw gateway startup" && sleep infinity'
-Restart=on-failure
+ExecStart=/usr/bin/env bash -lc 'set -euo pipefail; if [[ -z "${ZHC_ZEROCLAW_GATEWAY_CMD:-}" ]]; then echo "ERROR: set ZHC_ZEROCLAW_GATEWAY_CMD in .env" >&2; exit 1; fi; exec ${ZHC_ZEROCLAW_GATEWAY_CMD}'
+Restart=always
 RestartSec=5
+StartLimitIntervalSec=120
+StartLimitBurst=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/zhc-nova/storage
 
 [Install]
 WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight
 
 init-dev:
 	./scripts/init_dev.sh
@@ -29,3 +29,6 @@ metrics:
 
 telegram:
 	python3 services/telegram-control/bot_longpoll.py
+
+zeroclaw-preflight:
+	./scripts/zeroclaw_preflight.sh

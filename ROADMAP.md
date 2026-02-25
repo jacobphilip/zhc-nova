@@ -21,6 +21,7 @@
 - Real scheduled workflows and profile-based orchestration
 - Execution retries, backoff, dead-letter handling
 - Expanded worker channels and better local Pi task handling
+- Ubuntu single-node ZeroClaw gateway service rollout before multi-node expansion
 
 ## v1.3 - Data Governance Hardening
 

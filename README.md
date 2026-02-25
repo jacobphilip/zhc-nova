@@ -76,6 +76,11 @@ python3 services/task-router/router.py route \
 - Long-polling runtime: `services/telegram-control/bot_longpoll.py`
 - Smoke-test checklist: `docs/TELEGRAM_SMOKETEST.md`
 
+## ZeroClaw Bring-Up
+
+- Gateway unit template: `infra/zeroclaw/systemd/zeroclaw-gateway.service`
+- Preflight check: `./scripts/zeroclaw_preflight.sh`
+
 ## Safety Defaults
 
 - Human approval required by default for destructive/deploy/compliance/money/customer-facing actions.

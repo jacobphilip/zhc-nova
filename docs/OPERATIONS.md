@@ -55,8 +55,14 @@ python3 shared/task-registry/task_registry.py get --task-id <task_id>
 # Run Telegram long-polling control plane
 python3 services/telegram-control/bot_longpoll.py
 
+# ZeroClaw gateway preflight
+./scripts/zeroclaw_preflight.sh
+
 # Telegram service logs (systemd)
 journalctl -u zhc-telegram-control.service -n 200 --no-pager
+
+# ZeroClaw gateway logs (systemd)
+journalctl -u zeroclaw-gateway.service -n 200 --no-pager
 ```
 
 ## Autonomy Modes
@@ -146,6 +152,9 @@ ls storage/tasks/<task_id>/artifacts
 - If Telegram bot not responding:
   - `sudo systemctl restart zhc-telegram-control.service`
   - inspect logs: `journalctl -u zhc-telegram-control.service -n 200 --no-pager`
+- If ZeroClaw gateway not responding:
+  - `sudo systemctl restart zeroclaw-gateway.service`
+  - inspect logs: `journalctl -u zeroclaw-gateway.service -n 200 --no-pager`
 - If offset appears stuck or replaying:
   - `python3 services/telegram-control/bot_longpoll.py --show-offset`
   - `python3 services/telegram-control/bot_longpoll.py --reset-offset`
