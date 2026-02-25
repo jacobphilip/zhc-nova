@@ -22,6 +22,7 @@ Set or confirm in `.env`:
 - `ZHC_TASK_DB` path to SQLite database
 - `ZHC_STORAGE_ROOT` path to `storage/`
 - `ZHC_ROUTING_POLICY` and `ZHC_APPROVAL_POLICY`
+- `ZHC_EXECUTION_POLICY` and `ZHC_POLICY_ENFORCEMENT`
 - `ZHC_AUTONOMY_MODE` (`readonly`, `supervised`, `auto`)
 - `ZHC_ENABLE_REAL_OPENCODE=1` only when real OpenCode command integration is ready
 

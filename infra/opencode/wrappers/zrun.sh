@@ -75,6 +75,15 @@ if [[ "$AUTONOMY_MODE" == "readonly" ]]; then
   exit 1
 fi
 
+BLOCKED_KEYWORDS="${ZHC_BLOCKED_PROMPT_KEYWORDS:-rm -rf|drop database|truncate table|git push --force|force push|delete all}"
+IFS='|' read -r -a KEYWORDS <<< "$BLOCKED_KEYWORDS"
+for keyword in "${KEYWORDS[@]}"; do
+  if [[ -n "$keyword" ]] && grep -Fqi -- "$keyword" <<< "$PROMPT"; then
+    echo "ERROR: execution blocked by wrapper policy keyword: $keyword" >&2
+    exit 1
+  fi
+done
+
 PROVIDER="${ZHC_DEFAULT_PROVIDER:-openai}"
 MODEL="${ZHC_DEFAULT_MODEL:-codex}"
 

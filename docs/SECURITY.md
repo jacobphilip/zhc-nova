@@ -30,6 +30,17 @@ Approval policy is defined in `shared/policies/approvals.yaml`.
 - No destructive shell actions without explicit approval.
 - SSH dispatch commands should use least-privilege runtime accounts.
 
+## Execution Policy Layer
+
+- Execution policy is loaded from `shared/policies/execution_policy.yaml` (override with `ZHC_EXECUTION_POLICY`).
+- Enforcement mode is `strict` by default (override with `ZHC_POLICY_ENFORCEMENT=warn|strict`).
+- In `strict`, router blocks tasks before dispatch when:
+  - task type is not in the route-class allowlist
+  - prompt includes blocked policy keywords
+  - prompt includes blocked path patterns
+- Policy blocks are not overrideable via `/approve`; they require policy/config change.
+- Wrapper scripts (`zrun.sh`, `zdispatch.sh`) apply keyword checks as defense-in-depth.
+
 ## TODO
 
 - TODO: REAL_INTEGRATION - secret manager/vault integration.

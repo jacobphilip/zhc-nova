@@ -1,0 +1,43 @@
+{
+  "version": "v1",
+  "default": {
+    "enforcement": "strict"
+  },
+  "allowlists": {
+    "pi_light_task_types": [
+      "ping",
+      "alerts",
+      "summary",
+      "status_check",
+      "weather_ingest"
+    ],
+    "ubuntu_heavy_task_types": [
+      "code_refactor",
+      "code_review",
+      "build_fix",
+      "deploy",
+      "delete",
+      "scheduler_change",
+      "compliance_finalize",
+      "customer_outbound"
+    ]
+  },
+  "deny_rules": {
+    "blocked_prompt_keywords": [
+      "rm -rf",
+      "drop database",
+      "truncate table",
+      "git push --force",
+      "force push",
+      "delete all"
+    ],
+    "blocked_path_patterns": [
+      "/etc/",
+      "/var/lib/",
+      "~/.ssh/"
+    ]
+  },
+  "exceptions": {
+    "task_type_overrides": {}
+  }
+}

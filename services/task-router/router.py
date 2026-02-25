@@ -116,6 +116,56 @@ def autonomy_mode() -> str:
     return mode
 
 
+def evaluate_execution_policy(
+    task_type: str,
+    prompt: str,
+    route_class: str,
+    mode: str,
+    execution_policy: dict[str, Any],
+) -> tuple[bool, str]:
+    if mode == "readonly":
+        return False, "readonly_mode"
+
+    default_cfg = execution_policy.get("default", {})
+    enforcement = str(default_cfg.get("enforcement", "strict")).lower().strip()
+    env_enforcement = os.getenv("ZHC_POLICY_ENFORCEMENT", "").strip().lower()
+    if env_enforcement:
+        enforcement = env_enforcement
+    if enforcement not in {"strict", "warn"}:
+        enforcement = "strict"
+
+    allowlists = execution_policy.get("allowlists", {})
+    if route_class == "PI_LIGHT":
+        allowed_task_types = {
+            str(v).lower() for v in allowlists.get("pi_light_task_types", [])
+        }
+    else:
+        allowed_task_types = {
+            str(v).lower() for v in allowlists.get("ubuntu_heavy_task_types", [])
+        }
+
+    task_type_l = task_type.lower().strip()
+    if allowed_task_types and task_type_l not in allowed_task_types:
+        if enforcement == "strict":
+            return False, "unknown_task_type"
+
+    prompt_l = prompt.lower()
+    deny_rules = execution_policy.get("deny_rules", {})
+    blocked_keywords = [
+        str(v).lower() for v in deny_rules.get("blocked_prompt_keywords", [])
+    ]
+    if any(keyword and keyword in prompt_l for keyword in blocked_keywords):
+        if enforcement == "strict":
+            return False, "blocked_prompt_keyword"
+
+    blocked_paths = [str(v) for v in deny_rules.get("blocked_path_patterns", [])]
+    if any(path and path in prompt for path in blocked_paths):
+        if enforcement == "strict":
+            return False, "blocked_path_pattern"
+
+    return True, "allowed"
+
+
 def run_registry(args: list[str], db_path: Path) -> dict[str, Any]:
     cmd = [
         sys.executable,
@@ -202,6 +252,14 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             )
         )
     )
+    execution_policy = load_policy(
+        Path(
+            os.getenv(
+                "ZHC_EXECUTION_POLICY",
+                str(repo_root() / "shared/policies/execution_policy.yaml"),
+            )
+        )
+    )
     db_path = Path(
         os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
     ).resolve()
@@ -247,7 +305,14 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         task_id, f"classification route={route_class} risk={risk_level}", db_path
     )
 
-    if mode == "readonly":
+    policy_allowed, policy_reason = evaluate_execution_policy(
+        task_type,
+        prompt,
+        route_class,
+        mode,
+        execution_policy,
+    )
+    if not policy_allowed:
         run_registry(
             [
                 "update",
@@ -256,11 +321,11 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
                 "--status",
                 "blocked",
                 "--detail",
-                "readonly_mode_execution_disabled",
+                f"policy_block:{policy_reason}",
             ],
             db_path,
         )
-        append_task_event(task_id, "autonomy_mode=readonly blocked execution", db_path)
+        append_task_event(task_id, f"policy_block reason={policy_reason}", db_path)
         return {
             "task_id": task_id,
             "status": "blocked",
@@ -268,9 +333,13 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "risk_level": risk_level,
             "approval_required": False,
             "autonomy_mode": mode,
-            "message": "Task created but execution blocked by readonly autonomy mode",
+            "policy_status": "blocked",
+            "policy_reason": policy_reason,
+            "message": f"Task blocked by execution policy: {policy_reason}",
             "created": create_payload.get("created_at"),
         }
+
+    append_task_event(task_id, "policy_allow", db_path)
 
     if approval_required:
         run_registry(
@@ -308,6 +377,8 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "approval_required": True,
             "action_category": action_category,
             "autonomy_mode": mode,
+            "policy_status": "allowed",
+            "policy_reason": "allowed",
             "message": "Task created and blocked pending approval",
         }
 
@@ -335,6 +406,8 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         "risk_level": risk_level,
         "approval_required": False,
         "autonomy_mode": mode,
+        "policy_status": "allowed",
+        "policy_reason": "allowed",
         "message": dispatch_detail,
         "created": create_payload.get("created_at"),
     }
@@ -358,6 +431,10 @@ def approve_task(
     task = run_registry(["get", "--task-id", task_id], db_path)
     if task.get("status") != "blocked":
         raise ValueError(f"Task {task_id} must be blocked before approval decision")
+    if not task.get("approvals"):
+        raise ValueError(
+            f"Task {task_id} is blocked by policy/runtime state and cannot be resumed by approval"
+        )
 
     run_registry(
         [
@@ -481,6 +558,14 @@ def main() -> int:
                 )
             )
         )
+        execution_policy = load_policy(
+            Path(
+                os.getenv(
+                    "ZHC_EXECUTION_POLICY",
+                    str(repo_root() / "shared/policies/execution_policy.yaml"),
+                )
+            )
+        )
 
         if args.command == "classify":
             mode = autonomy_mode()
@@ -492,11 +577,20 @@ def main() -> int:
             )
             if mode == "supervised" and route_class == "UBUNTU_HEAVY":
                 approval_required = True
+            policy_allowed, policy_reason = evaluate_execution_policy(
+                args.task_type,
+                args.prompt,
+                route_class,
+                mode,
+                execution_policy,
+            )
             out = {
                 "route_class": route_class,
                 "risk_level": risk_level,
                 "approval_required": approval_required,
                 "autonomy_mode": mode,
+                "policy_status": "allowed" if policy_allowed else "blocked",
+                "policy_reason": policy_reason,
             }
             print(json.dumps(out, indent=2, sort_keys=True))
             return 0

@@ -51,6 +51,18 @@ ZHC_AUTONOMY_MODE=supervised python3 services/task-router/router.py route --task
 ZHC_AUTONOMY_MODE=auto python3 services/task-router/router.py route --task-type ping --prompt "status check"
 ```
 
+## Execution Policy
+
+- Policy source: `shared/policies/execution_policy.yaml` (or `ZHC_EXECUTION_POLICY`).
+- `strict` mode blocks execution before approval/dispatch when policy fails.
+- Blocked tasks return `policy_status=blocked` and `policy_reason=<code>`.
+
+Inspect blocked reason and events:
+
+```bash
+python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
+```
+
 ## Logs and Artifacts
 
 - Task logs/artifacts: `storage/tasks/<task_id>/`

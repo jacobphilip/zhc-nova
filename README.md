@@ -73,6 +73,7 @@ python3 services/task-router/router.py route \
 
 - Human approval required by default for destructive/deploy/compliance/money/customer-facing actions.
 - Autonomy modes: `readonly`, `supervised` (default), `auto`.
+- Execution policy is enforced before dispatch (`shared/policies/execution_policy.yaml`).
 - No production deploy automation in v1.
 - No secret embedding in code.
 
