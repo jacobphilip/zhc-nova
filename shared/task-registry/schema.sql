@@ -70,9 +70,22 @@ CREATE TABLE IF NOT EXISTS task_dispatch_lease (
     FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    task_id TEXT,
+    payload_hash TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'processing',
+    result_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE SET NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_route_class ON tasks(route_class);
 CREATE INDEX IF NOT EXISTS idx_task_events_task_id ON task_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_task_id ON approvals(task_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
 CREATE INDEX IF NOT EXISTS idx_dispatch_lease_status_expiry ON task_dispatch_lease(lease_status, lease_expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_scope_created ON idempotency_keys(scope, created_at);

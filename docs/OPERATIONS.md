@@ -144,6 +144,7 @@ python3 shared/task-registry/task_registry.py --json lease-get --task-id <task_i
 - Telegram command audit: `storage/memory/telegram_command_audit.jsonl`
 - Telegram offset file: `storage/memory/telegram_offset.txt`
 - Dispatch lease record: `task_dispatch_lease` (query via `lease-get` / `lease-list`)
+- Idempotency record: `idempotency_keys` (query via `idempo-get` / `idempo-list`)
 - Runtime stdout/stderr: systemd journal (when enabled)
 
 ## Recovery

@@ -22,6 +22,7 @@ Source of truth for service command behavior: `services/telegram-control/command
 - Command audit log: `storage/memory/telegram_command_audit.jsonl`.
 - Runtime protections: allowlist enforcement, per-chat rate limiting, command timeout, exponential poll backoff.
 - `/resume` uses `TELEGRAM_RESUME_TIMEOUT_SECONDS` (default 600s) to allow heavy execution windows.
+- Duplicate Telegram updates are deduplicated via durable idempotency keys (`scope=telegram_command`).
 - All high-risk actions require approval gate checks.
 - `/approve` records approval; `/resume` performs execution.
 - Rejected approvals cancel blocked tasks.

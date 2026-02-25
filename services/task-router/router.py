@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import socket
@@ -159,6 +160,11 @@ def dispatch_lease_seconds() -> int:
         return max(30, int(raw))
     except ValueError:
         return 120
+
+
+def payload_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def evaluate_execution_policy(
@@ -988,6 +994,82 @@ def dispatch_task_if_ready(
             "message": f"Task already being dispatched by another owner ({reason})",
         }
 
+    lease = run_registry(
+        [
+            "lease-get",
+            "--task-id",
+            task["task_id"],
+        ],
+        db_path,
+    )
+    lease_row = lease.get("lease") or {}
+    attempt_count = int(lease_row.get("attempt_count", 0) or 0)
+    idempo_key = f"dispatch:{task['task_id']}:{attempt_count}"
+    idempo_payload_hash = payload_hash(
+        {
+            "task_id": task["task_id"],
+            "task_type": task["task_type"],
+            "prompt": task["prompt"],
+            "route_class": task["route_class"],
+            "mode": mode,
+            "runtime_mode": dispatch_runtime,
+            "owner": owner,
+            "attempt_count": attempt_count,
+        }
+    )
+    idempo_begin = run_registry(
+        [
+            "idempo-begin",
+            "--key",
+            idempo_key,
+            "--scope",
+            "dispatch",
+            "--task-id",
+            task["task_id"],
+            "--payload-hash",
+            idempo_payload_hash,
+        ],
+        db_path,
+    )
+    if bool(idempo_begin.get("conflict", False)):
+        append_task_event(task["task_id"], "idempo_dispatch_conflict", db_path)
+        return {
+            "task_id": task["task_id"],
+            "status": "blocked",
+            "autonomy_mode": mode,
+            "runtime_mode": dispatch_runtime,
+            "pending": ["idempotency_conflict"],
+            "review_gate": review_gate_status(task["task_id"]),
+            "message": "Dispatch idempotency conflict; manual inspection required",
+        }
+    if bool(idempo_begin.get("exists", False)):
+        existing_status = str(idempo_begin.get("status", ""))
+        if existing_status == "processing":
+            append_task_event(task["task_id"], "idempo_dispatch_inflight", db_path)
+            return {
+                "task_id": task["task_id"],
+                "status": "running",
+                "autonomy_mode": mode,
+                "runtime_mode": dispatch_runtime,
+                "pending": ["dispatch_inflight"],
+                "review_gate": review_gate_status(task["task_id"]),
+                "message": "Dispatch attempt already in progress",
+            }
+        if existing_status == "completed":
+            cached = idempo_begin.get("result") or {}
+            cached_status = str(cached.get("dispatch_status") or "running")
+            cached_detail = str(cached.get("dispatch_detail") or "idempotent_replay")
+            append_task_event(task["task_id"], "idempo_dispatch_hit", db_path)
+            return {
+                "task_id": task["task_id"],
+                "status": cached_status,
+                "autonomy_mode": mode,
+                "runtime_mode": dispatch_runtime,
+                "review_gate": review_gate_status(task["task_id"]),
+                "message": f"Dispatch replayed from idempotency cache: {cached_detail}",
+            }
+    append_task_event(task["task_id"], "idempo_dispatch_miss", db_path)
+
     run_registry(
         [
             "update",
@@ -1000,6 +1082,7 @@ def dispatch_task_if_ready(
         ],
         db_path,
     )
+
     run_registry(
         [
             "update",
@@ -1023,6 +1106,26 @@ def dispatch_task_if_ready(
         dispatch_runtime,
     )
     dispatch_ms = max(1, int((time.perf_counter() - dispatch_started) * 1000))
+
+    run_registry(
+        [
+            "idempo-complete",
+            "--key",
+            idempo_key,
+            "--status",
+            "completed",
+            "--result-json",
+            json.dumps(
+                {
+                    "dispatch_status": dispatch_status,
+                    "dispatch_detail": dispatch_detail,
+                    "dispatch_duration_ms": dispatch_ms,
+                },
+                sort_keys=True,
+            ),
+        ],
+        db_path,
+    )
 
     terminal_status = dispatch_status
     if terminal_status == "canceled":

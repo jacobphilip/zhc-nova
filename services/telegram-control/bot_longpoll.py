@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import hashlib
 import json
 import os
 import subprocess
@@ -195,14 +196,9 @@ def append_audit(path: Path, payload: dict[str, Any]) -> None:
         f.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
-def audit_seen_update(path: Path, update_id: int) -> bool:
-    if update_id <= 0 or not path.exists():
-        return False
-    marker = f'"update_id": {update_id}'
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if marker in line:
-            return True
-    return False
+def payload_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def allow_message(
@@ -535,9 +531,6 @@ def process_update(
     config: Config, update: dict[str, Any], rate_buckets: dict[int, list[float]]
 ) -> None:
     update_id = int(update.get("update_id", 0))
-    if audit_seen_update(config.audit_log, update_id):
-        return
-
     message = update.get("message") or update.get("edited_message")
     if not isinstance(message, dict):
         return
@@ -556,20 +549,79 @@ def process_update(
         "text": text,
     }
 
+    idempo_key = f"tg_update:{update_id}" if update_id > 0 else ""
+
+    def finalize_idempo(outcome: dict[str, Any]) -> None:
+        if not idempo_key:
+            return
+        try:
+            registry_cmd(
+                [
+                    "idempo-complete",
+                    "--key",
+                    idempo_key,
+                    "--status",
+                    "completed",
+                    "--result-json",
+                    json.dumps(outcome, sort_keys=True),
+                ],
+                config.command_timeout_seconds,
+            )
+        except Exception as exc:
+            append_audit(
+                config.audit_log,
+                {
+                    "ts": utc_now(),
+                    "trace_id": f"tg-{update_id}",
+                    "status": "idempotency_complete_error",
+                    "key": idempo_key,
+                    "error": str(exc),
+                },
+            )
+
+    if idempo_key:
+        begin = registry_cmd(
+            [
+                "idempo-begin",
+                "--key",
+                idempo_key,
+                "--scope",
+                "telegram_command",
+                "--payload-hash",
+                payload_hash(update),
+            ],
+            config.command_timeout_seconds,
+        )
+        if bool(begin.get("conflict", False)):
+            audit_payload["status"] = "idempotency_conflict"
+            append_audit(config.audit_log, audit_payload)
+            send_message(config, chat_id, "Error: duplicate update conflict detected")
+            finalize_idempo({"status": "idempotency_conflict"})
+            return
+        if bool(begin.get("exists", False)):
+            prior_status = str(begin.get("status", ""))
+            if prior_status in {"completed", "processing"}:
+                audit_payload["status"] = "idempotent_replay"
+                append_audit(config.audit_log, audit_payload)
+                return
+
     if not allow_message(rate_buckets, chat_id, config, time.time()):
         audit_payload["status"] = "rate_limited"
         append_audit(config.audit_log, audit_payload)
+        finalize_idempo({"status": "rate_limited"})
         return
 
     if config.allowed_ids and chat_id not in config.allowed_ids:
         audit_payload["status"] = "unauthorized"
         append_audit(config.audit_log, audit_payload)
         send_message(config, chat_id, "Unauthorized chat_id for this bot")
+        finalize_idempo({"status": "unauthorized"})
         return
 
     if not text.startswith("/"):
         audit_payload["status"] = "ignored_non_command"
         append_audit(config.audit_log, audit_payload)
+        finalize_idempo({"status": "ignored_non_command"})
         return
 
     try:
@@ -577,6 +629,7 @@ def process_update(
         audit_payload["status"] = "ok"
         audit_payload["result"] = result
         append_audit(config.audit_log, audit_payload)
+        finalize_idempo({"status": "ok", "result": result})
         send_message(config, chat_id, response_text)
     except Exception as exc:
         err = str(exc)
@@ -585,6 +638,7 @@ def process_update(
         )
         audit_payload["error"] = str(exc)
         append_audit(config.audit_log, audit_payload)
+        finalize_idempo({"status": audit_payload["status"], "error": str(exc)})
         send_message(config, chat_id, f"Error: {exc}")
 
 

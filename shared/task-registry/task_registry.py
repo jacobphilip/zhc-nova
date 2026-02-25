@@ -707,6 +707,150 @@ def reconcile_dispatch_leases(db_path: Path, owner_id: str) -> dict[str, Any]:
     return {"owner_id": owner_id, "reconciled": reconciled, "at": now}
 
 
+def begin_idempotency(
+    db_path: Path,
+    key: str,
+    scope: str,
+    payload_hash: str,
+    task_id: str | None,
+) -> dict[str, Any]:
+    now = utc_now()
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT key, scope, task_id, payload_hash, status, result_json, created_at, updated_at
+            FROM idempotency_keys
+            WHERE key = ?
+            """,
+            (key,),
+        ).fetchone()
+
+        if not row:
+            conn.execute(
+                """
+                INSERT INTO idempotency_keys (
+                    key, scope, task_id, payload_hash, status, result_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'processing', '', ?, ?)
+                """,
+                (key, scope, task_id, payload_hash, now, now),
+            )
+            conn.commit()
+            return {
+                "key": key,
+                "scope": scope,
+                "exists": False,
+                "conflict": False,
+                "status": "processing",
+                "result": None,
+            }
+
+        existing_hash = str(row["payload_hash"])
+        result_obj = None
+        result_json = str(row["result_json"] or "")
+        if result_json:
+            try:
+                result_obj = json.loads(result_json)
+            except json.JSONDecodeError:
+                result_obj = {"raw": result_json}
+
+        if existing_hash != payload_hash:
+            conn.execute(
+                "UPDATE idempotency_keys SET status = 'conflict', updated_at = ? WHERE key = ?",
+                (now, key),
+            )
+            conn.commit()
+            return {
+                "key": key,
+                "scope": str(row["scope"]),
+                "exists": True,
+                "conflict": True,
+                "status": "conflict",
+                "result": result_obj,
+            }
+
+        return {
+            "key": key,
+            "scope": str(row["scope"]),
+            "exists": True,
+            "conflict": False,
+            "status": str(row["status"]),
+            "result": result_obj,
+        }
+
+
+def complete_idempotency(
+    db_path: Path,
+    key: str,
+    status: str,
+    result_json: str,
+) -> dict[str, Any]:
+    next_status = status.strip().lower()
+    if next_status not in {"processing", "completed", "conflict"}:
+        raise ValueError("status must be one of: processing, completed, conflict")
+    now = utc_now()
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT key FROM idempotency_keys WHERE key = ?",
+            (key,),
+        ).fetchone()
+        if not row:
+            raise KeyError(f"Idempotency key not found: {key}")
+
+        conn.execute(
+            """
+            UPDATE idempotency_keys
+            SET status = ?, result_json = ?, updated_at = ?
+            WHERE key = ?
+            """,
+            (next_status, result_json, now, key),
+        )
+        conn.commit()
+    return get_idempotency(db_path, key)
+
+
+def get_idempotency(db_path: Path, key: str) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT key, scope, task_id, payload_hash, status, result_json, created_at, updated_at
+            FROM idempotency_keys
+            WHERE key = ?
+            """,
+            (key,),
+        ).fetchone()
+    if not row:
+        raise KeyError(f"Idempotency key not found: {key}")
+    payload = dict(row)
+    raw_result = str(payload.get("result_json") or "")
+    if raw_result:
+        try:
+            payload["result"] = json.loads(raw_result)
+        except json.JSONDecodeError:
+            payload["result"] = {"raw": raw_result}
+    else:
+        payload["result"] = None
+    return payload
+
+
+def list_idempotency(
+    db_path: Path,
+    scope: str,
+    limit: int,
+) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT key, scope, task_id, payload_hash, status, created_at, updated_at
+            FROM idempotency_keys
+            WHERE scope = ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (scope, limit),
+        ).fetchall()
+    return {"scope": scope, "limit": limit, "keys": [dict(row) for row in rows]}
+
+
 def list_tasks(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -980,6 +1124,28 @@ def parse_args() -> argparse.Namespace:
     p_lease_list.add_argument("--status", default="")
     p_lease_list.add_argument("--limit", type=int, default=50)
 
+    p_idempo_begin = sub.add_parser("idempo-begin", help="Begin/check idempotency key")
+    p_idempo_begin.add_argument("--key", required=True)
+    p_idempo_begin.add_argument("--scope", required=True)
+    p_idempo_begin.add_argument("--payload-hash", required=True)
+    p_idempo_begin.add_argument("--task-id", default="")
+
+    p_idempo_complete = sub.add_parser(
+        "idempo-complete", help="Complete idempotency key"
+    )
+    p_idempo_complete.add_argument("--key", required=True)
+    p_idempo_complete.add_argument(
+        "--status", default="completed", choices=["processing", "completed", "conflict"]
+    )
+    p_idempo_complete.add_argument("--result-json", default="{}")
+
+    p_idempo_get = sub.add_parser("idempo-get", help="Get idempotency key")
+    p_idempo_get.add_argument("--key", required=True)
+
+    p_idempo_list = sub.add_parser("idempo-list", help="List idempotency keys by scope")
+    p_idempo_list.add_argument("--scope", required=True)
+    p_idempo_list.add_argument("--limit", type=int, default=100)
+
     return parser.parse_args()
 
 
@@ -1140,6 +1306,42 @@ def main() -> int:
         if args.command == "lease-list":
             status = args.status.strip().lower() or None
             result = list_dispatch_leases(db_path, status, args.limit)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "idempo-begin":
+            result = begin_idempotency(
+                db_path,
+                args.key,
+                args.scope,
+                args.payload_hash,
+                args.task_id.strip() or None,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "idempo-complete":
+            # validate JSON early
+            try:
+                json.loads(args.result_json)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"--result-json must be valid JSON: {exc}") from exc
+            result = complete_idempotency(
+                db_path,
+                args.key,
+                args.status,
+                args.result_json,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "idempo-get":
+            result = get_idempotency(db_path, args.key)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "idempo-list":
+            result = list_idempotency(db_path, args.scope, args.limit)
             print_out(result, args.json)
             return 0
 
