@@ -12,17 +12,18 @@ This repository is a v1 foundation focused on safe routing, explicit approval ga
 - Working v1 components:
   - SQLite task registry schema + CLI utility
   - Rule-based task router (PI_LIGHT vs UBUNTU_HEAVY)
+  - Telegram long-polling runtime (`services/telegram-control/bot_longpoll.py`)
   - OpenCode wrapper (`zrun.sh`) with artifact/log output
   - Pi-to-Ubuntu dispatch wrapper (`zdispatch.sh`) as SSH-based starter
   - Policy/config templates and ops bootstrap scripts
 - Stubbed integrations:
-  - Real Telegram webhook/bot runtime
+  - Telegram webhook mode (long-polling already implemented)
   - Real ZeroClaw runtime execution wiring
   - Real OpenCode automation command contract (guarded via TODO markers)
 
 ## Architecture (v1)
 
-- Telegram is the primary control interface (contract defined now, integration later).
+- Telegram is the primary control interface (long-polling runtime in v1).
 - Router classifies tasks by rules + policy and determines execution tier.
 - All tasks/events/approvals are written to SQLite.
 - Heavy tasks are dispatched to Ubuntu and run through `infra/opencode/wrappers/zrun.sh`.

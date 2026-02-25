@@ -45,6 +45,9 @@ python3 shared/task-registry/task_registry.py get --task-id <task_id>
 
 # Run health checks
 ./scripts/healthcheck.sh
+
+# Run Telegram long-polling control plane
+python3 services/telegram-control/bot_longpoll.py
 ```
 
 ## Autonomy Modes
@@ -96,6 +99,7 @@ ls storage/tasks/<task_id>/artifacts
 ## Logs and Artifacts
 
 - Task logs/artifacts: `storage/tasks/<task_id>/`
+- Telegram command audit: `storage/memory/telegram_command_audit.jsonl`
 - Runtime stdout/stderr: systemd journal (when enabled)
 
 ## Recovery

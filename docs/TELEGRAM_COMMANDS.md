@@ -16,7 +16,8 @@ Source of truth for service command behavior: `services/telegram-control/command
 
 ## Notes
 
-- v1 defines contract and responses; bot runtime integration is TODO.
+- Runtime implementation: `services/telegram-control/bot_longpoll.py` (long polling).
+- Command audit log: `storage/memory/telegram_command_audit.jsonl`.
 - All high-risk actions require approval gate checks.
 - Approved actions resume blocked tasks; rejected actions cancel blocked tasks.
 - `UBUNTU_HEAVY` tasks require planner/reviewer artifacts (review verdict `pass`) before resume.

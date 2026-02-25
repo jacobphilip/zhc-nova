@@ -1,4 +1,8 @@
-# Telegram Control Commands (v1 contract)
+# Telegram Control Commands (v1 runtime)
+
+Runtime entrypoint: `services/telegram-control/bot_longpoll.py`
+
+Audit log path: `storage/memory/telegram_command_audit.jsonl`
 
 ## /newtask
 

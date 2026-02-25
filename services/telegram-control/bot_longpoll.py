@@ -1,0 +1,423 @@
+#!/usr/bin/env python3
+"""Telegram long-polling control plane for ZHC-Nova."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def storage_root() -> Path:
+    return Path(os.getenv("ZHC_STORAGE_ROOT", str(repo_root() / "storage"))).resolve()
+
+
+def allowed_chat_ids() -> set[int]:
+    raw = os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").strip()
+    if not raw:
+        return set()
+    ids: set[int] = set()
+    for chunk in raw.split(","):
+        val = chunk.strip()
+        if not val:
+            continue
+        try:
+            ids.add(int(val))
+        except ValueError:
+            continue
+    return ids
+
+
+@dataclass
+class Config:
+    token: str
+    api_base: str
+    timeout_seconds: int
+    poll_interval_seconds: float
+    allowed_ids: set[int]
+    audit_log: Path
+    offset_file: Path
+
+
+def load_config() -> Config:
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token or token.startswith("TODO_"):
+        raise ValueError("TELEGRAM_BOT_TOKEN is required")
+
+    root = storage_root()
+    memory_dir = root / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+
+    return Config(
+        token=token,
+        api_base=f"https://api.telegram.org/bot{token}",
+        timeout_seconds=int(os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS", "30")),
+        poll_interval_seconds=float(os.getenv("TELEGRAM_POLL_INTERVAL_SECONDS", "1.0")),
+        allowed_ids=allowed_chat_ids(),
+        audit_log=memory_dir / "telegram_command_audit.jsonl",
+        offset_file=memory_dir / "telegram_offset.txt",
+    )
+
+
+def telegram_api(
+    config: Config, method: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    url = f"{config.api_base}/{method}"
+    data = urllib.parse.urlencode(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST")
+    try:
+        with urllib.request.urlopen(
+            req, timeout=config.timeout_seconds + 5
+        ) as response:
+            out = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"telegram_api_error method={method}: {exc}") from exc
+
+    if not out.get("ok"):
+        raise RuntimeError(f"telegram_api_not_ok method={method}: {out}")
+    return out
+
+
+def send_message(config: Config, chat_id: int, text: str) -> None:
+    telegram_api(
+        config,
+        "sendMessage",
+        {
+            "chat_id": str(chat_id),
+            "text": text[:4000],
+            "disable_web_page_preview": "true",
+        },
+    )
+
+
+def read_offset(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        return int(path.read_text(encoding="utf-8").strip() or "0")
+    except ValueError:
+        return 0
+
+
+def write_offset(path: Path, offset: int) -> None:
+    path.write_text(str(offset), encoding="utf-8")
+
+
+def append_audit(path: Path, payload: dict[str, Any]) -> None:
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def run_json_command(cmd: list[str]) -> dict[str, Any]:
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            proc.stderr.strip() or proc.stdout.strip() or "command failed"
+        )
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid_json_output: {proc.stdout[:200]}") from exc
+
+
+def router_cmd(args: list[str]) -> dict[str, Any]:
+    cmd = [sys.executable, str(repo_root() / "services/task-router/router.py"), *args]
+    return run_json_command(cmd)
+
+
+def registry_cmd(args: list[str]) -> dict[str, Any]:
+    cmd = [
+        sys.executable,
+        str(repo_root() / "shared/task-registry/task_registry.py"),
+        "--json",
+        *args,
+    ]
+    return run_json_command(cmd)
+
+
+def user_label(message: dict[str, Any]) -> str:
+    sender = message.get("from", {})
+    username = sender.get("username")
+    if username:
+        return f"@{username}"
+    return str(sender.get("id", "unknown"))
+
+
+def parse_command(text: str) -> tuple[str, list[str]]:
+    parts = text.strip().split()
+    if not parts:
+        return "", []
+    cmd = parts[0].split("@", 1)[0].lower()
+    return cmd, parts[1:]
+
+
+def format_task_short(task: dict[str, Any]) -> str:
+    return (
+        f"{task.get('task_id')} | {task.get('status')} | {task.get('route_class')} | "
+        f"type={task.get('task_type')} | risk={task.get('risk_level')}"
+    )
+
+
+def handle_command(message: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    text = str(message.get("text", ""))
+    cmd, args = parse_command(text)
+    actor = user_label(message)
+
+    if cmd == "/newtask":
+        if len(args) < 2:
+            raise ValueError("Usage: /newtask <task_type> <prompt>")
+        task_type = args[0]
+        prompt = " ".join(args[1:])
+        result = router_cmd(["route", "--task-type", task_type, "--prompt", prompt])
+        msg = (
+            f"Task: {result.get('task_id')}\n"
+            f"Status: {result.get('status')}\n"
+            f"Route: {result.get('route_class')}\n"
+            f"Policy: {result.get('policy_status', 'n/a')} ({result.get('policy_reason', 'n/a')})"
+        )
+        return msg, result
+
+    if cmd == "/status":
+        if len(args) != 1:
+            raise ValueError("Usage: /status <task_id>")
+        task = registry_cmd(["get", "--task-id", args[0]])
+        approvals = task.get("approvals", [])
+        approval_status = approvals[-1]["status"] if approvals else "none"
+        msg = (
+            f"{format_task_short(task)}\n"
+            f"approval={approval_status}\n"
+            f"events={len(task.get('events', []))}"
+        )
+        return msg, task
+
+    if cmd == "/list":
+        limit = 10
+        if args:
+            limit = max(1, min(50, int(args[0])))
+        tasks = registry_cmd(["list", "--limit", str(limit)])
+        if not tasks:
+            return "No tasks found", {"tasks": []}
+        lines = [format_task_short(task) for task in tasks]
+        return "\n".join(lines[:20]), {"tasks": tasks}
+
+    if cmd == "/approve":
+        if len(args) < 2:
+            raise ValueError("Usage: /approve <task_id> <action_category> [note]")
+        task_id = args[0]
+        action_category = args[1]
+        note = " ".join(args[2:]) if len(args) > 2 else "approved via telegram"
+        result = router_cmd(
+            [
+                "approve",
+                "--task-id",
+                task_id,
+                "--action-category",
+                action_category,
+                "--decided-by",
+                actor,
+                "--note",
+                note,
+            ]
+        )
+        return (
+            f"Approved {task_id}: {result.get('status')} ({result.get('message')})",
+            result,
+        )
+
+    if cmd == "/plan":
+        if len(args) < 2:
+            raise ValueError("Usage: /plan <task_id> <summary>")
+        task_id = args[0]
+        summary = " ".join(args[1:])
+        result = router_cmd(
+            [
+                "record-plan",
+                "--task-id",
+                task_id,
+                "--author",
+                actor,
+                "--summary",
+                summary,
+            ]
+        )
+        return f"Planner artifact saved for {task_id}", result
+
+    if cmd == "/review":
+        if len(args) < 2:
+            raise ValueError("Usage: /review <task_id> <pass|fail> [notes]")
+        task_id = args[0]
+        verdict = args[1].lower()
+        notes = " ".join(args[2:]) if len(args) > 2 else ""
+        result = router_cmd(
+            [
+                "record-review",
+                "--task-id",
+                task_id,
+                "--reviewer",
+                actor,
+                "--verdict",
+                verdict,
+                "--notes",
+                notes,
+            ]
+        )
+        return f"Review recorded for {task_id}: {verdict}", result
+
+    if cmd == "/resume":
+        if len(args) != 1:
+            raise ValueError("Usage: /resume <task_id>")
+        result = router_cmd(["resume", "--task-id", args[0], "--requested-by", actor])
+        return (
+            f"Resume {args[0]}: {result.get('status')} ({result.get('message')})",
+            result,
+        )
+
+    if cmd == "/stop":
+        if len(args) != 1:
+            raise ValueError("Usage: /stop <task_id>")
+        task = registry_cmd(["get", "--task-id", args[0]])
+        if task.get("status") in {"succeeded", "failed", "cancelled"}:
+            return f"Task {args[0]} already terminal: {task.get('status')}", task
+        result = registry_cmd(
+            [
+                "update",
+                "--task-id",
+                args[0],
+                "--status",
+                "cancelled",
+                "--detail",
+                f"telegram_stop_requested by={actor}",
+            ]
+        )
+        return f"Task {args[0]} cancelled", result
+
+    if cmd == "/board":
+        tasks = registry_cmd(["list", "--limit", "50"])
+        counts: dict[str, int] = {}
+        for task in tasks:
+            status = task.get("status", "unknown")
+            counts[status] = counts.get(status, 0) + 1
+        msg = (
+            f"Board\n"
+            f"running={counts.get('running', 0)} blocked={counts.get('blocked', 0)} "
+            f"failed={counts.get('failed', 0)} pending={counts.get('pending', 0)}"
+        )
+        return msg, {"counts": counts}
+
+    raise ValueError(
+        "Unknown command. Use /newtask, /status, /list, /approve, /plan, /review, /resume, /stop, /board"
+    )
+
+
+def process_update(config: Config, update: dict[str, Any]) -> None:
+    update_id = int(update.get("update_id", 0))
+    message = update.get("message") or update.get("edited_message")
+    if not isinstance(message, dict):
+        return
+
+    chat = message.get("chat", {})
+    chat_id = int(chat.get("id", 0))
+    text = str(message.get("text", ""))
+    actor = user_label(message)
+
+    audit_payload: dict[str, Any] = {
+        "ts": utc_now(),
+        "update_id": update_id,
+        "chat_id": chat_id,
+        "actor": actor,
+        "text": text,
+    }
+
+    if config.allowed_ids and chat_id not in config.allowed_ids:
+        audit_payload["status"] = "unauthorized"
+        append_audit(config.audit_log, audit_payload)
+        send_message(config, chat_id, "Unauthorized chat_id for this bot")
+        return
+
+    if not text.startswith("/"):
+        audit_payload["status"] = "ignored_non_command"
+        append_audit(config.audit_log, audit_payload)
+        return
+
+    try:
+        response_text, result = handle_command(message)
+        audit_payload["status"] = "ok"
+        audit_payload["result"] = result
+        append_audit(config.audit_log, audit_payload)
+        send_message(config, chat_id, response_text)
+    except Exception as exc:
+        audit_payload["status"] = "error"
+        audit_payload["error"] = str(exc)
+        append_audit(config.audit_log, audit_payload)
+        send_message(config, chat_id, f"Error: {exc}")
+
+
+def poll_loop(config: Config) -> None:
+    offset = read_offset(config.offset_file)
+    while True:
+        try:
+            result = telegram_api(
+                config,
+                "getUpdates",
+                {
+                    "timeout": str(config.timeout_seconds),
+                    "offset": str(offset),
+                    "allowed_updates": json.dumps(["message", "edited_message"]),
+                },
+            )
+            updates = result.get("result", [])
+            for update in updates:
+                process_update(config, update)
+                offset = int(update.get("update_id", offset)) + 1
+                write_offset(config.offset_file, offset)
+        except Exception as exc:
+            append_audit(
+                config.audit_log,
+                {
+                    "ts": utc_now(),
+                    "status": "poll_error",
+                    "error": str(exc),
+                },
+            )
+            time.sleep(max(config.poll_interval_seconds, 1.0))
+
+        time.sleep(config.poll_interval_seconds)
+
+
+def main() -> int:
+    try:
+        config = load_config()
+        append_audit(
+            config.audit_log,
+            {
+                "ts": utc_now(),
+                "status": "startup",
+                "allowed_chat_ids_count": len(config.allowed_ids),
+            },
+        )
+        poll_loop(config)
+        return 0
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

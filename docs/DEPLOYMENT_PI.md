@@ -18,7 +18,7 @@ cp .env.example .env
 
 ## Runtime Role
 
-- Receive Telegram commands (future runtime integration)
+- Receive Telegram commands via long-polling runtime (`services/telegram-control/bot_longpoll.py`)
 - Run `services/task-router/router.py`
 - Execute `PI_LIGHT` tasks locally
 - Dispatch `UBUNTU_HEAVY` tasks through `infra/opencode/wrappers/zdispatch.sh`
@@ -27,10 +27,12 @@ cp .env.example .env
 
 - `infra/zeroclaw/systemd/zeroclaw-gateway.service`
 - `infra/zeroclaw/systemd/zhc-task-router.service`
+- `infra/zeroclaw/systemd/zhc-telegram-control.service`
 
 Copy and adjust paths/user values before enabling.
 
-## TODO Integration Hooks
+## Runtime Notes
 
-- TODO: REAL_INTEGRATION - Telegram runtime process (bot polling/webhook).
+- Long polling requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_CHAT_IDS`.
+- Command audit log is written to `storage/memory/telegram_command_audit.jsonl`.
 - TODO: REAL_INTEGRATION - ZeroClaw service hooks.
