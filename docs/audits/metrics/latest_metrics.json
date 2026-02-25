@@ -2,10 +2,9 @@
   "actions": [
     "Tune execution policy allowlists/keywords to reduce unnecessary policy blocks.",
     "Improve planner/reviewer quality: increase gate pass rate above 80%.",
-    "Enforce complete reviewer checklist schema on all heavy-task reviews.",
-    "Enable OpenRouter pricing enrichment to improve cost signal quality."
+    "Enforce complete reviewer checklist schema on all heavy-task reviews."
   ],
-  "generated_at": "2026-02-25T16:24:49.283554+00:00",
+  "generated_at": "2026-02-25T16:32:22.733996+00:00",
   "iteration": "latest",
   "summary": {
     "approvals": {
@@ -41,20 +40,20 @@
     "task_flow": {
       "risk_counts": {
         "high": 3,
-        "low": 11,
+        "low": 18,
         "medium": 8
       },
       "route_counts": {
-        "PI_LIGHT": 13,
+        "PI_LIGHT": 20,
         "UBUNTU_HEAVY": 9
       },
       "status_counts": {
         "blocked": 8,
         "cancelled": 1,
         "failed": 6,
-        "succeeded": 7
+        "succeeded": 14
       },
-      "task_count": 22
+      "task_count": 29
     },
     "telegram": {
       "command_count": 0,
@@ -68,22 +67,22 @@
       "unauthorized_count": 0
     },
     "telemetry": {
-      "avg_compression_ratio": 0.8514,
-      "avg_dispatch_duration_ms": 15.0,
-      "avg_estimated_cost_usd": 0.001863,
-      "avg_estimated_tokens": 49.36,
+      "avg_compression_ratio": 0.7074,
+      "avg_dispatch_duration_ms": 7.46,
+      "avg_estimated_cost_usd": 0.001413,
+      "avg_estimated_tokens": 81.14,
       "cost_source_counts": {
         "heuristic": 5,
-        "openrouter_api": 0,
+        "openrouter_api": 7,
         "unknown": 17
       },
       "p90_dispatch_duration_ms": 23.0,
       "total_estimated_cost_usd": 0.040989,
-      "total_estimated_tokens": 1086
+      "total_estimated_tokens": 2353
     }
   },
   "window": {
-    "end": "2026-02-25T16:24:49.280830+00:00",
-    "start": "2026-02-18T16:24:49.280830+00:00"
+    "end": "2026-02-25T16:32:22.732072+00:00",
+    "start": "2026-02-18T16:32:22.732072+00:00"
   }
 }

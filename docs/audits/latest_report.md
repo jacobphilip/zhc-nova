@@ -31,8 +31,4 @@
 
 ## Evidence Notes
 
-- `terminal_daemon_interfaces`: long-poll runtime and hardened service are in `services/telegram-control/bot_longpoll.py` and `infra/zeroclaw/systemd/zhc-telegram-control.service`.
-- `hybrid_memory_compression`: token-budget compaction and retrieval telemetry are in `services/task-router/router.py` and reported by `scripts/metrics_report.py`.
-- `closed_loop_feedback`: recurring metrics workflow is implemented in `scripts/metrics_report.py`, `Makefile`, and rolling outputs under `docs/audits/metrics/latest_metrics.md`.
-- `multi_agent_swarm`: planner/reviewer gate + structured fail taxonomy are in `services/task-router/router.py`, `shared/prompts/worker_coder.md`, and `shared/prompts/worker_reviewer.md`.
-- `cost_optimization`: OpenRouter price enrichment path exists in `services/task-router/router.py`, but current metrics show heuristic-only usage pending real `OPENROUTER_API_KEY`.
+- Add file-path evidence for each metric in this section each iteration.
