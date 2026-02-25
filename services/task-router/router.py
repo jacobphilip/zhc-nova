@@ -22,6 +22,7 @@ from typing import Any
 
 
 VALID_AUTONOMY_MODES = {"readonly", "supervised", "auto"}
+VALID_RUNTIME_MODES = {"single_node", "multi_node"}
 VALID_REVIEW_FAIL_CODES = {
     "policy_conflict",
     "missing_tests",
@@ -133,6 +134,14 @@ def autonomy_mode() -> str:
     if mode not in VALID_AUTONOMY_MODES:
         allowed = ", ".join(sorted(VALID_AUTONOMY_MODES))
         raise ValueError(f"Invalid ZHC_AUTONOMY_MODE '{mode}'. Allowed: {allowed}")
+    return mode
+
+
+def runtime_mode() -> str:
+    mode = os.getenv("ZHC_RUNTIME_MODE", "single_node").strip().lower()
+    if mode not in VALID_RUNTIME_MODES:
+        allowed = ", ".join(sorted(VALID_RUNTIME_MODES))
+        raise ValueError(f"Invalid ZHC_RUNTIME_MODE '{mode}'. Allowed: {allowed}")
     return mode
 
 
@@ -575,11 +584,31 @@ def dispatch(
     prompt: str,
     task_id: str,
     mode: str,
+    dispatch_runtime: str,
 ) -> tuple[str, str]:
     if mode == "readonly":
         return "blocked", "readonly_mode_execution_disabled"
 
     if route_class == "UBUNTU_HEAVY":
+        if dispatch_runtime == "single_node":
+            cmd = [
+                str(repo_root() / "infra/opencode/wrappers/zrun.sh"),
+                "--task-type",
+                task_type,
+                "--prompt",
+                prompt,
+                "--task-id",
+                task_id,
+            ]
+            result = run_command(cmd)
+            if result.returncode != 0:
+                return "failed", f"local_run_failed: {result.stderr.strip()}"
+            local_task_id = task_id
+            stdout = result.stdout.strip()
+            if stdout:
+                local_task_id = stdout.splitlines()[-1].strip()
+            return "succeeded", f"single_node_local_run task_id={local_task_id}"
+
         cmd = [
             str(repo_root() / "infra/opencode/wrappers/zdispatch.sh"),
             "--task-type",
@@ -634,6 +663,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
 
     route_class, risk_level = classify(task_type, prompt, routing_policy)
     mode = autonomy_mode()
+    dispatch_runtime = runtime_mode()
     approval_required = requires_approval(risk_level, task_type, approval_policy)
     action_category = action_category_for_task(task_type, risk_level)
 
@@ -648,6 +678,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         "source": "router_v1",
         "approval_required": approval_required,
         "autonomy_mode": mode,
+        "runtime_mode": dispatch_runtime,
         "model_provider_hint": model_provider,
         "model_name_hint": model_name,
         "queued_at": utc_now(),
@@ -705,6 +736,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "risk_level": risk_level,
             "approval_required": False,
             "autonomy_mode": mode,
+            "runtime_mode": dispatch_runtime,
             "policy_status": "blocked",
             "policy_reason": policy_reason,
             "message": f"Task blocked by execution policy: {policy_reason}",
@@ -761,6 +793,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "approval_required": approval_required,
             "action_category": action_category if approval_required else "none",
             "autonomy_mode": mode,
+            "runtime_mode": dispatch_runtime,
             "policy_status": "allowed",
             "policy_reason": "allowed",
             "review_gate": gate_status,
@@ -776,6 +809,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         "risk_level": risk_level,
         "approval_required": False,
         "autonomy_mode": mode,
+        "runtime_mode": dispatch_runtime,
         "policy_status": "allowed",
         "policy_reason": "allowed",
         "message": dispatch_result["message"],
@@ -808,6 +842,7 @@ def dispatch_task_if_ready(
     task: dict[str, Any], mode: str, db_path: Path
 ) -> dict[str, Any]:
     blockers = dispatch_blockers(task)
+    dispatch_runtime = runtime_mode()
     if blockers:
         hint = ""
         if any(b.startswith("review_failed:") for b in blockers):
@@ -825,6 +860,7 @@ def dispatch_task_if_ready(
             "task_id": task["task_id"],
             "status": "blocked",
             "autonomy_mode": mode,
+            "runtime_mode": dispatch_runtime,
             "pending": blockers,
             "review_gate": review_gate_status(task["task_id"]),
             "message": f"Task remains blocked pending: {', '.join(blockers)}.{hint}",
@@ -874,6 +910,11 @@ def dispatch_task_if_ready(
 
     append_task_event(
         task["task_id"],
+        f"dispatch_mode={dispatch_runtime}",
+        db_path,
+    )
+    append_task_event(
+        task["task_id"],
         (
             "context_compacted "
             f"tokens_in={tokens_in} tokens_out={tokens_out} ratio={compression_ratio} budget={budget}"
@@ -892,7 +933,12 @@ def dispatch_task_if_ready(
 
     dispatch_started = time.perf_counter()
     dispatch_status, dispatch_detail = dispatch(
-        task["route_class"], task["task_type"], task["prompt"], task["task_id"], mode
+        task["route_class"],
+        task["task_type"],
+        task["prompt"],
+        task["task_id"],
+        mode,
+        dispatch_runtime,
     )
     dispatch_ms = max(1, int((time.perf_counter() - dispatch_started) * 1000))
     run_registry(
@@ -949,6 +995,7 @@ def dispatch_task_if_ready(
         "task_id": task["task_id"],
         "status": dispatch_status,
         "autonomy_mode": mode,
+        "runtime_mode": dispatch_runtime,
         "message": dispatch_detail,
     }
 

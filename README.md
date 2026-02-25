@@ -12,6 +12,7 @@ This repository is a v1 foundation focused on safe routing, explicit approval ga
 - Working v1 components:
   - SQLite task registry schema + CLI utility
   - Rule-based task router (PI_LIGHT vs UBUNTU_HEAVY)
+  - Ubuntu single-node runtime mode (`ZHC_RUNTIME_MODE=single_node`) for local heavy execution
   - Telegram long-polling runtime (`services/telegram-control/bot_longpoll.py`)
   - OpenCode wrapper (`zrun.sh`) with artifact/log output
   - Pi-to-Ubuntu dispatch wrapper (`zdispatch.sh`) as SSH-based starter
@@ -26,7 +27,7 @@ This repository is a v1 foundation focused on safe routing, explicit approval ga
 - Telegram is the primary control interface (long-polling runtime in v1).
 - Router classifies tasks by rules + policy and determines execution tier.
 - All tasks/events/approvals are written to SQLite.
-- Heavy tasks are dispatched to Ubuntu and run through `infra/opencode/wrappers/zrun.sh`.
+- Heavy tasks run locally in single-node mode or dispatch over SSH in multi-node mode.
 - Light tasks execute locally on Pi via worker stubs.
 - Approval gates block risky operations until explicit human approval.
 

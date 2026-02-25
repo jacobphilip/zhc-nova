@@ -6,6 +6,7 @@ Run this checklist after deploy/restart of Telegram runtime.
 
 - `zhc-telegram-control.service` is active
 - `.env` has valid `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_CHAT_IDS`
+- `.env` sets `ZHC_RUNTIME_MODE=single_node` for Ubuntu-first validation
 - Task DB initialized
 
 ## Command Sequence
@@ -29,3 +30,4 @@ Run this checklist after deploy/restart of Telegram runtime.
 - `storage/memory/telegram_command_audit.jsonl` contains `ok` records.
 - Unauthorized chat IDs are logged as `unauthorized` and do not execute commands.
 - `python3 shared/task-registry/task_registry.py --json telemetry --limit 10` shows updated telemetry.
+- In `single_node` mode, final heavy `/resume` should execute local wrapper path (no SSH host error).

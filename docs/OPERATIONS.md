@@ -73,6 +73,18 @@ ZHC_AUTONOMY_MODE=supervised python3 services/task-router/router.py route --task
 ZHC_AUTONOMY_MODE=auto python3 services/task-router/router.py route --task-type ping --prompt "status check"
 ```
 
+## Runtime Modes
+
+- `single_node` (default): `UBUNTU_HEAVY` tasks run locally through `infra/opencode/wrappers/zrun.sh`.
+- `multi_node`: `UBUNTU_HEAVY` tasks dispatch over SSH through `infra/opencode/wrappers/zdispatch.sh`.
+
+Examples:
+
+```bash
+ZHC_RUNTIME_MODE=single_node python3 services/task-router/router.py route --task-type code_refactor --prompt "single node"
+ZHC_RUNTIME_MODE=multi_node python3 services/task-router/router.py route --task-type code_refactor --prompt "multi node"
+```
+
 ## Execution Policy
 
 - Policy source: `shared/policies/execution_policy.yaml` (or `ZHC_EXECUTION_POLICY`).
@@ -144,6 +156,13 @@ ls storage/tasks/<task_id>/artifacts
 ## Telegram Smoke Test
 
 - Run `docs/TELEGRAM_SMOKETEST.md` after deploy/restart.
+
+## Ubuntu Single-Node Alive Checklist
+
+- Telegram bot running and responding to `/start`, `/help`, `/newtask`, `/board`.
+- Heavy task flow enforces approval + planner/reviewer gates.
+- Heavy task resume executes local wrapper path in `single_node` mode.
+- Artifacts present in `storage/tasks/<task_id>/artifacts/`.
 
 ## External Brain Fallback
 

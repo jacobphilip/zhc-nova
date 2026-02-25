@@ -11,7 +11,7 @@ Primary interface is Telegram. Web dashboard is a future secondary interface.
 
 ## Core Components
 
-- `services/telegram-control/` - Telegram command contract and future runtime service.
+- `services/telegram-control/` - Telegram command contract and long-poll runtime service.
 - `services/task-router/router.py` - v1 rule-based classifier and dispatcher.
 - `shared/task-registry/` - SQLite schema + CLI utility.
 - `infra/opencode/wrappers/zrun.sh` - OpenCode task runner wrapper.
@@ -24,7 +24,8 @@ Primary interface is Telegram. Web dashboard is a future secondary interface.
 2. Router classifies task as `PI_LIGHT` or `UBUNTU_HEAVY`.
 3. Router writes task + events to SQLite registry.
 4. Router dispatches execution:
-   - `UBUNTU_HEAVY`: remote dispatch to Ubuntu and run `zrun.sh`.
+   - `UBUNTU_HEAVY` in `single_node` mode: local run through `zrun.sh`.
+   - `UBUNTU_HEAVY` in `multi_node` mode: remote dispatch and run `zrun.sh`.
    - `PI_LIGHT`: execute local worker stub.
    - `UBUNTU_HEAVY` dispatch is gated on planner/reviewer artifacts (review verdict must be `pass`).
 5. Execution writes artifacts under `storage/tasks/<task_id>/`.
@@ -58,6 +59,5 @@ No automatic writes to official records in v1 runtime flows.
 
 ## TODOs
 
-- TODO: REAL_INTEGRATION - Telegram bot service implementation.
 - TODO: REAL_INTEGRATION - ZeroClaw runtime command bindings.
 - TODO: REAL_INTEGRATION - Multi-node fleet dispatch and health routing.

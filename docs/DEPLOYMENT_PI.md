@@ -42,6 +42,9 @@ sudo systemctl status zhc-telegram-control.service
 
 ## Runtime Notes
 
+- Current recommended rollout is Ubuntu single-node mode first (`ZHC_RUNTIME_MODE=single_node`).
+- Pi multi-node dispatch (`ZHC_RUNTIME_MODE=multi_node`) is a later phase after Ubuntu baseline is stable.
+
 - Long polling requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_CHAT_IDS`.
 - Command audit log is written to `storage/memory/telegram_command_audit.jsonl`.
 - Offset file is `storage/memory/telegram_offset.txt`.
