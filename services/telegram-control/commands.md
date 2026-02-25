@@ -29,8 +29,9 @@ Example:
 
 `/approve <task_id> <action_category> [note]`
 
-- Records human approval for gated actions.
-- TODO: REAL_INTEGRATION - update approvals table + resume blocked execution.
+- Records human approval decision for gated actions.
+- Resumes blocked task execution when approved.
+- If rejected, task is deterministically cancelled.
 
 ## /stop
 

@@ -15,3 +15,4 @@ Source of truth for service command behavior: `services/telegram-control/command
 
 - v1 defines contract and responses; bot runtime integration is TODO.
 - All high-risk actions require approval gate checks.
+- Approved actions resume blocked tasks; rejected actions cancel blocked tasks.

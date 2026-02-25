@@ -89,6 +89,22 @@ def requires_approval(
     return bool(gates.get(gate_name, {}).get("require_human_approval", False))
 
 
+def action_category_for_task(task_type: str, risk_level: str) -> str:
+    gate_by_task_type = {
+        "deploy": "deploy_restart",
+        "delete": "delete_files",
+        "scheduler_change": "scheduler_change",
+        "compliance_finalize": "compliance_finalize",
+        "customer_outbound": "customer_outbound",
+    }
+    task_type_l = task_type.lower().strip()
+    if task_type_l in gate_by_task_type:
+        return gate_by_task_type[task_type_l]
+    if risk_level == "high":
+        return "manual_review"
+    return "none"
+
+
 def run_registry(args: list[str], db_path: Path) -> dict[str, Any]:
     cmd = [
         sys.executable,
@@ -174,6 +190,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
 
     route_class, risk_level = classify(task_type, prompt, routing_policy)
     approval_required = requires_approval(risk_level, task_type, approval_policy)
+    action_category = action_category_for_task(task_type, risk_level)
 
     task_id = f"task-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     metadata = {
@@ -208,6 +225,20 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
     if approval_required:
         run_registry(
             [
+                "approval-request",
+                "--task-id",
+                task_id,
+                "--action-category",
+                action_category,
+                "--requested-by",
+                "router_v1",
+                "--note",
+                "created_by_router_block",
+            ],
+            db_path,
+        )
+        run_registry(
+            [
                 "update",
                 "--task-id",
                 task_id,
@@ -225,6 +256,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "route_class": route_class,
             "risk_level": risk_level,
             "approval_required": True,
+            "action_category": action_category,
             "message": "Task created and blocked pending approval",
         }
 
@@ -254,6 +286,97 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
     }
 
 
+def approve_task(
+    task_id: str,
+    action_category: str,
+    decided_by: str,
+    note: str,
+    decision: str,
+) -> dict[str, Any]:
+    db_path = Path(
+        os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
+    ).resolve()
+
+    task = run_registry(["get", "--task-id", task_id], db_path)
+    if task.get("status") != "blocked":
+        raise ValueError(f"Task {task_id} must be blocked before approval decision")
+
+    run_registry(
+        [
+            "approval-decide",
+            "--task-id",
+            task_id,
+            "--action-category",
+            action_category,
+            "--decision",
+            decision,
+            "--decided-by",
+            decided_by,
+            "--note",
+            note,
+        ],
+        db_path,
+    )
+
+    if decision == "rejected":
+        run_registry(
+            [
+                "update",
+                "--task-id",
+                task_id,
+                "--status",
+                "cancelled",
+                "--detail",
+                f"approval_rejected action={action_category}",
+            ],
+            db_path,
+        )
+        append_task_event(
+            task_id,
+            f"approval_rejected action={action_category} by={decided_by}",
+            db_path,
+        )
+        return {
+            "task_id": task_id,
+            "status": "cancelled",
+            "action_category": action_category,
+            "decision": decision,
+            "message": "Task cancelled due to rejected approval",
+        }
+
+    dispatch_status, dispatch_detail = dispatch(
+        task["route_class"], task["task_type"], task["prompt"], task_id
+    )
+    run_registry(
+        [
+            "update",
+            "--task-id",
+            task_id,
+            "--status",
+            dispatch_status,
+            "--detail",
+            dispatch_detail,
+        ],
+        db_path,
+    )
+    append_task_event(
+        task_id,
+        (
+            "resumed_after_approval "
+            f"action={action_category} decision={decision} by={decided_by}; {dispatch_detail}"
+        ),
+        db_path,
+    )
+
+    return {
+        "task_id": task_id,
+        "status": dispatch_status,
+        "action_category": action_category,
+        "decision": decision,
+        "message": dispatch_detail,
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ZHC-Nova task router")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -265,6 +388,17 @@ def parse_args() -> argparse.Namespace:
     classify_parser = sub.add_parser("classify", help="Classify task without dispatch")
     classify_parser.add_argument("--task-type", required=True)
     classify_parser.add_argument("--prompt", required=True)
+
+    approve_parser = sub.add_parser(
+        "approve", help="Record approval decision and resume blocked task"
+    )
+    approve_parser.add_argument("--task-id", required=True)
+    approve_parser.add_argument("--action-category", required=True)
+    approve_parser.add_argument("--decided-by", required=True)
+    approve_parser.add_argument("--note", default="")
+    approve_parser.add_argument(
+        "--decision", choices=["approved", "rejected"], default="approved"
+    )
 
     return parser.parse_args()
 
@@ -305,6 +439,17 @@ def main() -> int:
 
         if args.command == "route":
             result = route_task(args.task_type, args.prompt)
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "approve":
+            result = approve_task(
+                task_id=args.task_id,
+                action_category=args.action_category,
+                decided_by=args.decided_by,
+                note=args.note,
+                decision=args.decision,
+            )
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
 

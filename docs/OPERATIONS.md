@@ -24,6 +24,9 @@
 # Create and route task
 python3 services/task-router/router.py route --task-type code_refactor --prompt "Refactor parser"
 
+# Approve and resume a blocked task
+python3 services/task-router/router.py approve --task-id <task_id> --action-category deploy_restart --decided-by jacob --note "approved"
+
 # List tasks
 python3 shared/task-registry/task_registry.py list --limit 20
 

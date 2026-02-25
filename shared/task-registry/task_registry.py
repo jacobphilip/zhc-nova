@@ -34,6 +34,15 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def append_event(
+    conn: sqlite3.Connection, task_id: str, event_type: str, detail: str
+) -> None:
+    conn.execute(
+        "INSERT INTO task_events (task_id, event_type, detail, created_at) VALUES (?, ?, ?, ?)",
+        (task_id, event_type, detail, utc_now()),
+    )
+
+
 def init_db(db_path: Path, schema_path: Path) -> None:
     if not schema_path.exists():
         raise FileNotFoundError(f"Schema not found: {schema_path}")
@@ -80,9 +89,8 @@ def create_task(
                 meta_json,
             ),
         )
-        conn.execute(
-            "INSERT INTO task_events (task_id, event_type, detail, created_at) VALUES (?, ?, ?, ?)",
-            (task_id, "created", f"route={route_class}; risk={risk_level}", now),
+        append_event(
+            conn, task_id, "created", f"route={route_class}; risk={risk_level}"
         )
         conn.commit()
     return get_task(db_path, task_id)
@@ -99,12 +107,193 @@ def update_task(
         )
         if cur.rowcount == 0:
             raise KeyError(f"Task not found: {task_id}")
-        conn.execute(
-            "INSERT INTO task_events (task_id, event_type, detail, created_at) VALUES (?, ?, ?, ?)",
-            (task_id, "status_updated", detail or status, now),
-        )
+        append_event(conn, task_id, "status_updated", detail or status)
         conn.commit()
     return get_task(db_path, task_id)
+
+
+def request_approval(
+    db_path: Path,
+    task_id: str,
+    action_category: str,
+    requested_by: str,
+    note: str,
+) -> dict[str, Any]:
+    now = utc_now()
+    with connect(db_path) as conn:
+        task_row = conn.execute(
+            "SELECT task_id FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not task_row:
+            raise KeyError(f"Task not found: {task_id}")
+
+        row = conn.execute(
+            """
+            SELECT id, status
+            FROM approvals
+            WHERE task_id = ? AND action_category = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (task_id, action_category),
+        ).fetchone()
+
+        if not row:
+            conn.execute(
+                """
+                INSERT INTO approvals (
+                    task_id, action_category, status, requested_by,
+                    decision_note, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, action_category, "required", requested_by, note, now, now),
+            )
+            append_event(
+                conn,
+                task_id,
+                "approval_requested",
+                f"action={action_category}; by={requested_by}; note={note}",
+            )
+        elif row["status"] == "required":
+            conn.execute(
+                """
+                UPDATE approvals
+                SET requested_by = ?, decision_note = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (requested_by, note, now, row["id"]),
+            )
+            append_event(
+                conn,
+                task_id,
+                "approval_requested",
+                f"action={action_category}; refreshed_by={requested_by}; note={note}",
+            )
+        else:
+            append_event(
+                conn,
+                task_id,
+                "approval_requested",
+                f"action={action_category}; existing_status={row['status']}",
+            )
+        conn.commit()
+    return get_approvals(db_path, task_id)
+
+
+def decide_approval(
+    db_path: Path,
+    task_id: str,
+    action_category: str,
+    decision: str,
+    decided_by: str,
+    note: str,
+) -> dict[str, Any]:
+    now = utc_now()
+    if decision not in {"approved", "rejected"}:
+        raise ValueError("decision must be one of: approved, rejected")
+
+    with connect(db_path) as conn:
+        task_row = conn.execute(
+            "SELECT task_id FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not task_row:
+            raise KeyError(f"Task not found: {task_id}")
+
+        row = conn.execute(
+            """
+            SELECT id, status
+            FROM approvals
+            WHERE task_id = ? AND action_category = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (task_id, action_category),
+        ).fetchone()
+
+        if not row:
+            conn.execute(
+                """
+                INSERT INTO approvals (
+                    task_id, action_category, status, requested_by,
+                    decided_by, decision_note, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    action_category,
+                    "required",
+                    "auto_created",
+                    None,
+                    "",
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT id, status
+                FROM approvals
+                WHERE task_id = ? AND action_category = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (task_id, action_category),
+            ).fetchone()
+
+        if row["status"] in {"approved", "rejected", "cancelled"}:
+            if row["status"] == decision:
+                append_event(
+                    conn,
+                    task_id,
+                    "approval_decision",
+                    f"action={action_category}; decision={decision}; no_op=true",
+                )
+                conn.commit()
+                return get_approvals(db_path, task_id)
+            raise ValueError(
+                f"Approval already decided as {row['status']} for action {action_category}"
+            )
+
+        conn.execute(
+            """
+            UPDATE approvals
+            SET status = ?, decided_by = ?, decision_note = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (decision, decided_by, note, now, row["id"]),
+        )
+        append_event(
+            conn,
+            task_id,
+            "approval_decision",
+            f"action={action_category}; decision={decision}; by={decided_by}; note={note}",
+        )
+        conn.commit()
+
+    return get_approvals(db_path, task_id)
+
+
+def get_approvals(db_path: Path, task_id: str) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        task_row = conn.execute(
+            "SELECT task_id FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not task_row:
+            raise KeyError(f"Task not found: {task_id}")
+        rows = conn.execute(
+            """
+            SELECT id, task_id, action_category, status, requested_by,
+                   decided_by, decision_note, created_at, updated_at
+            FROM approvals
+            WHERE task_id = ?
+            ORDER BY id ASC
+            """,
+            (task_id,),
+        ).fetchall()
+    return {"task_id": task_id, "approvals": [dict(row) for row in rows]}
 
 
 def list_tasks(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
@@ -134,11 +323,22 @@ def get_task(db_path: Path, task_id: str) -> dict[str, Any]:
             "SELECT event_type, detail, created_at FROM task_events WHERE task_id = ? ORDER BY id ASC",
             (task_id,),
         ).fetchall()
+        approvals = conn.execute(
+            """
+            SELECT action_category, status, requested_by, decided_by,
+                   decision_note, created_at, updated_at
+            FROM approvals
+            WHERE task_id = ?
+            ORDER BY id ASC
+            """,
+            (task_id,),
+        ).fetchall()
 
     task = dict(row)
     task["requires_approval"] = bool(task["requires_approval"])
     task["metadata"] = json.loads(task.pop("metadata_json") or "{}")
     task["events"] = [dict(e) for e in events]
+    task["approvals"] = [dict(a) for a in approvals]
     return task
 
 
@@ -191,6 +391,28 @@ def parse_args() -> argparse.Namespace:
     p_list = sub.add_parser("list", help="List tasks")
     p_list.add_argument("--limit", type=int, default=20)
 
+    p_approval_request = sub.add_parser(
+        "approval-request", help="Create or refresh an approval request"
+    )
+    p_approval_request.add_argument("--task-id", required=True)
+    p_approval_request.add_argument("--action-category", required=True)
+    p_approval_request.add_argument("--requested-by", default="system")
+    p_approval_request.add_argument("--note", default="")
+
+    p_approval_decide = sub.add_parser(
+        "approval-decide", help="Decide an approval request"
+    )
+    p_approval_decide.add_argument("--task-id", required=True)
+    p_approval_decide.add_argument("--action-category", required=True)
+    p_approval_decide.add_argument(
+        "--decision", choices=["approved", "rejected"], required=True
+    )
+    p_approval_decide.add_argument("--decided-by", required=True)
+    p_approval_decide.add_argument("--note", default="")
+
+    p_approval_list = sub.add_parser("approval-list", help="List approvals for a task")
+    p_approval_list.add_argument("--task-id", required=True)
+
     return parser.parse_args()
 
 
@@ -240,6 +462,34 @@ def main() -> int:
 
         if args.command == "list":
             result = list_tasks(db_path, args.limit)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "approval-request":
+            result = request_approval(
+                db_path=db_path,
+                task_id=args.task_id,
+                action_category=args.action_category,
+                requested_by=args.requested_by,
+                note=args.note,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "approval-decide":
+            result = decide_approval(
+                db_path=db_path,
+                task_id=args.task_id,
+                action_category=args.action_category,
+                decision=args.decision,
+                decided_by=args.decided_by,
+                note=args.note,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "approval-list":
+            result = get_approvals(db_path, args.task_id)
             print_out(result, args.json)
             return 0
 
