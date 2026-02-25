@@ -851,6 +851,42 @@ def list_idempotency(
     return {"scope": scope, "limit": limit, "keys": [dict(row) for row in rows]}
 
 
+def list_events(db_path: Path, task_id: str, limit: int = 200) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        ensure_task_exists(conn, task_id)
+        rows = conn.execute(
+            """
+            SELECT event_type, detail, created_at
+            FROM task_events
+            WHERE task_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (task_id, limit),
+        ).fetchall()
+    events = [dict(row) for row in rows]
+    events.reverse()
+    return {"task_id": task_id, "limit": limit, "events": events}
+
+
+def trace_events(db_path: Path, trace_id: str, limit: int = 500) -> dict[str, Any]:
+    pattern = f'"trace_id": "{trace_id}"'
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT task_id, event_type, detail, created_at
+            FROM task_events
+            WHERE detail LIKE ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (f"%{pattern}%", limit),
+        ).fetchall()
+    events = [dict(row) for row in rows]
+    events.reverse()
+    return {"trace_id": trace_id, "limit": limit, "events": events}
+
+
 def list_tasks(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -1146,6 +1182,14 @@ def parse_args() -> argparse.Namespace:
     p_idempo_list.add_argument("--scope", required=True)
     p_idempo_list.add_argument("--limit", type=int, default=100)
 
+    p_events = sub.add_parser("events", help="List events for a task")
+    p_events.add_argument("--task-id", required=True)
+    p_events.add_argument("--limit", type=int, default=200)
+
+    p_trace_events = sub.add_parser("trace-events", help="Find events by trace_id")
+    p_trace_events.add_argument("--trace-id", required=True)
+    p_trace_events.add_argument("--limit", type=int, default=500)
+
     return parser.parse_args()
 
 
@@ -1342,6 +1386,16 @@ def main() -> int:
 
         if args.command == "idempo-list":
             result = list_idempotency(db_path, args.scope, args.limit)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "events":
+            result = list_events(db_path, args.task_id, args.limit)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "trace-events":
+            result = trace_events(db_path, args.trace_id, args.limit)
             print_out(result, args.json)
             return 0
 

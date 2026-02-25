@@ -368,7 +368,7 @@ def help_text() -> str:
 
 
 def handle_command(
-    config: Config, message: dict[str, Any]
+    config: Config, message: dict[str, Any], trace_id: str = ""
 ) -> tuple[str, dict[str, Any]]:
     text = str(message.get("text", ""))
     cmd, args = parse_command(text)
@@ -384,7 +384,15 @@ def handle_command(
         prompt = " ".join(args[1:])
         result = router_cmd(
             config,
-            ["route", "--task-type", task_type, "--prompt", prompt],
+            [
+                "route",
+                "--task-type",
+                task_type,
+                "--prompt",
+                prompt,
+                "--trace-id",
+                trace_id,
+            ],
             config.command_timeout_seconds,
         )
         msg = (
@@ -443,6 +451,8 @@ def handle_command(
                 "--note",
                 note,
                 "--defer-dispatch",
+                "--trace-id",
+                trace_id,
             ],
             config.command_timeout_seconds,
         )
@@ -466,6 +476,8 @@ def handle_command(
                 actor,
                 "--summary",
                 summary,
+                "--trace-id",
+                trace_id,
             ],
             config.command_timeout_seconds,
         )
@@ -523,6 +535,8 @@ def handle_command(
                 json.dumps(checklist),
                 "--notes",
                 notes,
+                "--trace-id",
+                trace_id,
             ],
             config.command_timeout_seconds,
         )
@@ -548,7 +562,15 @@ def handle_command(
         )
         result = router_cmd(
             config,
-            ["resume", "--task-id", args[0], "--requested-by", actor],
+            [
+                "resume",
+                "--task-id",
+                args[0],
+                "--requested-by",
+                actor,
+                "--trace-id",
+                trace_id,
+            ],
             resume_timeout,
         )
         return (
@@ -703,7 +725,11 @@ def process_update(
         return
 
     try:
-        response_text, result = handle_command(config, message)
+        response_text, result = handle_command(
+            config,
+            message,
+            str(audit_payload.get("trace_id", "")),
+        )
         audit_payload["status"] = "ok"
         audit_payload["result"] = result
         append_audit(config.audit_log, audit_payload)

@@ -83,7 +83,7 @@ class IdempotencyPathTests(unittest.TestCase):
 
         calls = {"count": 0}
 
-        def fake_handle_command(config, message):
+        def fake_handle_command(config, message, trace_id=""):
             calls["count"] += 1
             return "ok", {"ok": True, "message": message.get("text", "")}
 

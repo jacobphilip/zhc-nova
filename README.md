@@ -17,6 +17,10 @@ This repository is a v1 foundation focused on safe routing, explicit approval ga
   - OpenCode wrapper (`zrun.sh`) with artifact/log output
   - Pi-to-Ubuntu dispatch wrapper (`zdispatch.sh`) as SSH-based starter
   - Policy/config templates and ops bootstrap scripts
+  - Durable dispatch lease ownership + recovery semantics (`task_dispatch_lease`)
+  - Durable idempotency keys for Telegram command dedupe and dispatch replay safety
+  - Fast control-plane harness (`make smoke-fast`) and invariant suite (`make test-control`)
+  - End-to-end `trace_id` propagation (`tg-<update_id>`) into router metadata/events
 - Stubbed integrations:
   - Telegram webhook mode (long-polling already implemented)
   - Real ZeroClaw runtime execution wiring
@@ -75,6 +79,24 @@ python3 services/task-router/router.py route \
 
 - Long-polling runtime: `services/telegram-control/bot_longpoll.py`
 - Smoke-test checklist: `docs/TELEGRAM_SMOKETEST.md`
+- Fast validation gate: `make smoke-fast`
+- Control invariant tests: `make test-control`
+- Command semantics + reliability controls: `docs/TELEGRAM_COMMANDS.md`
+
+## Reliability And Traceability
+
+- Timeout/retry matrix is configured through `.env` (`TELEGRAM_*` and `ZHC_DISPATCH_*` knobs).
+- Task event timeline by task id:
+
+```bash
+python3 shared/task-registry/task_registry.py --json events --task-id <task_id> --limit 200
+```
+
+- Task event timeline by trace id:
+
+```bash
+python3 shared/task-registry/task_registry.py --json trace-events --trace-id <trace_id> --limit 500
+```
 
 ## ZeroClaw Bring-Up
 

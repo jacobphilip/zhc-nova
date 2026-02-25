@@ -134,6 +134,8 @@ Inspect artifacts for one task:
 
 ```bash
 python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
+python3 shared/task-registry/task_registry.py --json events --task-id <task_id> --limit 200
+python3 shared/task-registry/task_registry.py --json trace-events --trace-id <trace_id> --limit 500
 ls storage/tasks/<task_id>/artifacts
 python3 shared/task-registry/task_registry.py --json lease-get --task-id <task_id>
 ```

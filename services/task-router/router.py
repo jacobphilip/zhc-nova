@@ -527,19 +527,52 @@ def estimate_cost(
     }
 
 
-def append_task_event(task_id: str, detail: str, db_path: Path) -> None:
+def append_task_event(
+    task_id: str,
+    detail: str,
+    db_path: Path,
+    trace_id: str = "",
+    event: str = "router_event",
+    status: str = "",
+    reason: str = "",
+    meta: dict[str, Any] | None = None,
+) -> None:
     import sqlite3
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
+        payload: str
+        if trace_id:
+            row: dict[str, Any] = {
+                "trace_id": trace_id,
+                "event": event,
+                "component": "router",
+                "task_id": task_id,
+                "detail": detail,
+            }
+            if status:
+                row["status"] = status
+            if reason:
+                row["reason"] = reason
+            if meta:
+                row["meta"] = meta
+            payload = json.dumps(row, sort_keys=True)
+        else:
+            payload = detail
+
         conn.execute(
             "INSERT INTO task_events (task_id, event_type, detail, created_at) VALUES (?, ?, ?, ?)",
-            (task_id, "router", detail, utc_now()),
+            (task_id, "router", payload, utc_now()),
         )
         conn.commit()
 
 
-def run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+def run_command(
+    cmd: list[str],
+    task_id: str = "",
+    db_path: Path | None = None,
+    trace_id: str = "",
+) -> subprocess.CompletedProcess[str]:
     timeout_s = dispatch_timeout_seconds()
     retry_max = dispatch_retry_max()
     backoff_s = dispatch_retry_backoff_seconds()
@@ -562,6 +595,17 @@ def run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
                 returncode=124,
                 stdout="",
                 stderr=f"dispatch_timeout after {timeout_s}s",
+            )
+
+        if task_id and db_path and attempt > 1:
+            append_task_event(
+                task_id,
+                f"dispatch_retry attempt={attempt}",
+                db_path,
+                trace_id=trace_id,
+                event="dispatch_retry",
+                status="retry",
+                meta={"attempt": attempt, "max_attempts": attempts},
             )
 
         if proc.returncode == 0:
@@ -691,6 +735,8 @@ def dispatch(
     task_id: str,
     mode: str,
     dispatch_runtime: str,
+    db_path: Path | None = None,
+    trace_id: str = "",
 ) -> tuple[str, str]:
     if mode == "readonly":
         return "blocked", "readonly_mode_execution_disabled"
@@ -706,7 +752,7 @@ def dispatch(
                 "--task-id",
                 task_id,
             ]
-            result = run_command(cmd)
+            result = run_command(cmd, task_id, db_path, trace_id)
             if result.returncode != 0:
                 return "failed", f"local_run_failed: {result.stderr.strip()}"
             local_task_id = task_id
@@ -722,7 +768,7 @@ def dispatch(
             "--prompt",
             prompt,
         ]
-        result = run_command(cmd)
+        result = run_command(cmd, task_id, db_path, trace_id)
         if result.returncode != 0:
             return "failed", f"dispatch_failed: {result.stderr.strip()}"
         remote_task_id = result.stdout.strip() or task_id
@@ -739,7 +785,7 @@ def dispatch(
     return "succeeded", "pi_light_stub_executed"
 
 
-def route_task(task_type: str, prompt: str) -> dict[str, Any]:
+def route_task(task_type: str, prompt: str, trace_id: str = "") -> dict[str, Any]:
     routing_policy = load_policy(
         Path(
             os.getenv(
@@ -789,6 +835,8 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         "model_name_hint": model_name,
         "queued_at": utc_now(),
     }
+    if trace_id:
+        metadata["trace_id"] = trace_id
 
     create_payload = run_registry(
         [
@@ -811,7 +859,13 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
     )
 
     append_task_event(
-        task_id, f"classification route={route_class} risk={risk_level}", db_path
+        task_id,
+        f"classification route={route_class} risk={risk_level}",
+        db_path,
+        trace_id=trace_id,
+        event="route_classified",
+        status="ok",
+        meta={"route_class": route_class, "risk_level": risk_level},
     )
 
     policy_allowed, policy_reason = evaluate_execution_policy(
@@ -834,7 +888,15 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             ],
             db_path,
         )
-        append_task_event(task_id, f"policy_block reason={policy_reason}", db_path)
+        append_task_event(
+            task_id,
+            f"policy_block reason={policy_reason}",
+            db_path,
+            trace_id=trace_id,
+            event="policy_block",
+            status="blocked",
+            reason=policy_reason,
+        )
         return {
             "task_id": task_id,
             "status": "blocked",
@@ -849,7 +911,14 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             "created": create_payload.get("created_at"),
         }
 
-    append_task_event(task_id, "policy_allow", db_path)
+    append_task_event(
+        task_id,
+        "policy_allow",
+        db_path,
+        trace_id=trace_id,
+        event="policy_allow",
+        status="ok",
+    )
 
     gate_required = route_class == "UBUNTU_HEAVY"
     gate_status = review_gate_status(task_id)
@@ -857,7 +926,14 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
     pending_reasons: list[str] = []
     if gate_required and not gate_status["gate_passed"]:
         pending_reasons.append("planner_reviewer_gate")
-        append_task_event(task_id, "review_gate_pending", db_path)
+        append_task_event(
+            task_id,
+            "review_gate_pending",
+            db_path,
+            trace_id=trace_id,
+            event="review_gate_pending",
+            status="blocked",
+        )
 
     if approval_required:
         run_registry(
@@ -875,7 +951,14 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
             db_path,
         )
         pending_reasons.append("human_approval")
-        append_task_event(task_id, "approval_required before execution", db_path)
+        append_task_event(
+            task_id,
+            "approval_required before execution",
+            db_path,
+            trace_id=trace_id,
+            event="approval_required",
+            status="blocked",
+        )
 
     if pending_reasons:
         block_detail = "awaiting_" + "_and_".join(pending_reasons)
@@ -907,7 +990,7 @@ def route_task(task_type: str, prompt: str) -> dict[str, Any]:
         }
 
     refreshed_task = run_registry(["get", "--task-id", task_id], db_path)
-    dispatch_result = dispatch_task_if_ready(refreshed_task, mode, db_path)
+    dispatch_result = dispatch_task_if_ready(refreshed_task, mode, db_path, trace_id)
     return {
         "task_id": task_id,
         "status": dispatch_result["status"],
@@ -945,8 +1028,12 @@ def dispatch_blockers(task: dict[str, Any]) -> list[str]:
 
 
 def dispatch_task_if_ready(
-    task: dict[str, Any], mode: str, db_path: Path
+    task: dict[str, Any], mode: str, db_path: Path, trace_id: str = ""
 ) -> dict[str, Any]:
+    if not trace_id:
+        metadata = task.get("metadata", {})
+        if isinstance(metadata, dict):
+            trace_id = str(metadata.get("trace_id", "")).strip()
     blockers = dispatch_blockers(task)
     dispatch_runtime = runtime_mode()
     if blockers:
@@ -961,6 +1048,10 @@ def dispatch_task_if_ready(
             task["task_id"],
             f"resume_blocked pending={','.join(blockers)}",
             db_path,
+            trace_id=trace_id,
+            event="resume_blocked",
+            status="blocked",
+            meta={"pending": blockers},
         )
         return {
             "task_id": task["task_id"],
@@ -1018,6 +1109,10 @@ def dispatch_task_if_ready(
         task["task_id"],
         f"dispatch_mode={dispatch_runtime}",
         db_path,
+        trace_id=trace_id,
+        event="dispatch_mode",
+        status="ok",
+        meta={"runtime_mode": dispatch_runtime},
     )
     append_task_event(
         task["task_id"],
@@ -1026,6 +1121,15 @@ def dispatch_task_if_ready(
             f"tokens_in={tokens_in} tokens_out={tokens_out} ratio={compression_ratio} budget={budget}"
         ),
         db_path,
+        trace_id=trace_id,
+        event="context_compacted",
+        status="ok",
+        meta={
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "compression_ratio": compression_ratio,
+            "budget": budget,
+        },
     )
     append_task_event(
         task["task_id"],
@@ -1035,6 +1139,14 @@ def dispatch_task_if_ready(
             f"usd={cost_info['estimated_cost_usd']}"
         ),
         db_path,
+        trace_id=trace_id,
+        event="cost_estimated",
+        status="ok",
+        meta={
+            "cost_source": cost_info["cost_source"],
+            "estimated_cost_usd": cost_info["estimated_cost_usd"],
+            "total_tokens": tokens_out + completion_tokens_est,
+        },
     )
 
     owner = dispatch_owner_id()
@@ -1066,7 +1178,13 @@ def dispatch_task_if_ready(
     if not bool(claim.get("claimed", False)):
         reason = str(claim.get("reason", "unknown"))
         append_task_event(
-            task["task_id"], f"lease_claim_denied reason={reason}", db_path
+            task["task_id"],
+            f"lease_claim_denied reason={reason}",
+            db_path,
+            trace_id=trace_id,
+            event="lease_claim_denied",
+            status="blocked",
+            reason=reason,
         )
         return {
             "task_id": task["task_id"],
@@ -1116,7 +1234,14 @@ def dispatch_task_if_ready(
         db_path,
     )
     if bool(idempo_begin.get("conflict", False)):
-        append_task_event(task["task_id"], "idempo_dispatch_conflict", db_path)
+        append_task_event(
+            task["task_id"],
+            "idempo_dispatch_conflict",
+            db_path,
+            trace_id=trace_id,
+            event="idempo_dispatch_conflict",
+            status="blocked",
+        )
         return {
             "task_id": task["task_id"],
             "status": "blocked",
@@ -1129,7 +1254,14 @@ def dispatch_task_if_ready(
     if bool(idempo_begin.get("exists", False)):
         existing_status = str(idempo_begin.get("status", ""))
         if existing_status == "processing":
-            append_task_event(task["task_id"], "idempo_dispatch_inflight", db_path)
+            append_task_event(
+                task["task_id"],
+                "idempo_dispatch_inflight",
+                db_path,
+                trace_id=trace_id,
+                event="idempo_dispatch_inflight",
+                status="running",
+            )
             return {
                 "task_id": task["task_id"],
                 "status": "running",
@@ -1143,7 +1275,14 @@ def dispatch_task_if_ready(
             cached = idempo_begin.get("result") or {}
             cached_status = str(cached.get("dispatch_status") or "running")
             cached_detail = str(cached.get("dispatch_detail") or "idempotent_replay")
-            append_task_event(task["task_id"], "idempo_dispatch_hit", db_path)
+            append_task_event(
+                task["task_id"],
+                "idempo_dispatch_hit",
+                db_path,
+                trace_id=trace_id,
+                event="idempo_dispatch_hit",
+                status="ok",
+            )
             return {
                 "task_id": task["task_id"],
                 "status": cached_status,
@@ -1152,7 +1291,14 @@ def dispatch_task_if_ready(
                 "review_gate": review_gate_status(task["task_id"]),
                 "message": f"Dispatch replayed from idempotency cache: {cached_detail}",
             }
-    append_task_event(task["task_id"], "idempo_dispatch_miss", db_path)
+    append_task_event(
+        task["task_id"],
+        "idempo_dispatch_miss",
+        db_path,
+        trace_id=trace_id,
+        event="idempo_dispatch_miss",
+        status="ok",
+    )
 
     run_registry(
         [
@@ -1188,6 +1334,8 @@ def dispatch_task_if_ready(
         task["task_id"],
         mode,
         dispatch_runtime,
+        db_path,
+        trace_id,
     )
     dispatch_ms = max(1, int((time.perf_counter() - dispatch_started) * 1000))
 
@@ -1259,6 +1407,10 @@ def dispatch_task_if_ready(
         task["task_id"],
         f"dispatched_after_gates status={dispatch_status} detail={dispatch_detail}",
         db_path,
+        trace_id=trace_id,
+        event="dispatch_completed",
+        status=dispatch_status,
+        meta={"dispatch_detail": dispatch_detail, "dispatch_duration_ms": dispatch_ms},
     )
     merge_task_metadata(
         task["task_id"],
@@ -1292,6 +1444,14 @@ def dispatch_task_if_ready(
             f"cost_source={cost_info['cost_source']}"
         ),
         db_path,
+        trace_id=trace_id,
+        event="dispatch_telemetry",
+        status="ok",
+        meta={
+            "dispatch_duration_ms": dispatch_ms,
+            "estimated_cost_usd": cost_info["estimated_cost_usd"],
+            "cost_source": cost_info["cost_source"],
+        },
     )
     return {
         "task_id": task["task_id"],
@@ -1302,15 +1462,29 @@ def dispatch_task_if_ready(
     }
 
 
-def record_plan(task_id: str, author: str, summary: str) -> dict[str, Any]:
+def record_plan(
+    task_id: str, author: str, summary: str, trace_id: str = ""
+) -> dict[str, Any]:
     db_path = Path(
         os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
     ).resolve()
     task = run_registry(["get", "--task-id", task_id], db_path)
+    if not trace_id:
+        metadata = task.get("metadata", {})
+        if isinstance(metadata, dict):
+            trace_id = str(metadata.get("trace_id", "")).strip()
     if task.get("route_class") != "UBUNTU_HEAVY":
         raise ValueError("Planner artifact is only required for UBUNTU_HEAVY tasks")
     artifact = write_planner_artifact(task_id, author, summary)
-    append_task_event(task_id, f"planner_artifact_recorded path={artifact}", db_path)
+    append_task_event(
+        task_id,
+        f"planner_artifact_recorded path={artifact}",
+        db_path,
+        trace_id=trace_id,
+        event="planner_artifact_recorded",
+        status="ok",
+        meta={"artifact": str(artifact)},
+    )
     return {
         "task_id": task_id,
         "artifact": str(artifact),
@@ -1326,11 +1500,16 @@ def record_review(
     reason_code: str,
     checklist_json: str,
     notes: str,
+    trace_id: str = "",
 ) -> dict[str, Any]:
     db_path = Path(
         os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
     ).resolve()
     task = run_registry(["get", "--task-id", task_id], db_path)
+    if not trace_id:
+        metadata = task.get("metadata", {})
+        if isinstance(metadata, dict):
+            trace_id = str(metadata.get("trace_id", "")).strip()
     if task.get("route_class") != "UBUNTU_HEAVY":
         raise ValueError("Reviewer artifact is only required for UBUNTU_HEAVY tasks")
     verdict_l = verdict.strip().lower()
@@ -1373,6 +1552,11 @@ def record_review(
             f"reason_code={reason_code_l or 'none'} path={artifact}"
         ),
         db_path,
+        trace_id=trace_id,
+        event="reviewer_artifact_recorded",
+        status=verdict_l,
+        reason=reason_code_l,
+        meta={"artifact": str(artifact)},
     )
     return {
         "task_id": task_id,
@@ -1388,7 +1572,7 @@ def record_review(
     }
 
 
-def resume_task(task_id: str, requested_by: str) -> dict[str, Any]:
+def resume_task(task_id: str, requested_by: str, trace_id: str = "") -> dict[str, Any]:
     mode = autonomy_mode()
     if mode == "readonly":
         raise ValueError("Cannot resume tasks while ZHC_AUTONOMY_MODE=readonly")
@@ -1405,9 +1589,20 @@ def resume_task(task_id: str, requested_by: str) -> dict[str, Any]:
         db_path,
     )
     task = run_registry(["get", "--task-id", task_id], db_path)
+    if not trace_id:
+        metadata = task.get("metadata", {})
+        if isinstance(metadata, dict):
+            trace_id = str(metadata.get("trace_id", "")).strip()
     status = str(task.get("status", "")).strip().lower()
     if status in {"succeeded", "failed", "cancelled", "expired"}:
-        append_task_event(task_id, f"resume_noop terminal_status={status}", db_path)
+        append_task_event(
+            task_id,
+            f"resume_noop terminal_status={status}",
+            db_path,
+            trace_id=trace_id,
+            event="resume_noop_terminal",
+            status=status,
+        )
         return {
             "task_id": task_id,
             "status": status,
@@ -1416,7 +1611,14 @@ def resume_task(task_id: str, requested_by: str) -> dict[str, Any]:
             "message": f"Task already terminal: {status}",
         }
     if status in {"running", "queued"}:
-        append_task_event(task_id, f"resume_noop already_{status}", db_path)
+        append_task_event(
+            task_id,
+            f"resume_noop already_{status}",
+            db_path,
+            trace_id=trace_id,
+            event="resume_noop_in_progress",
+            status=status,
+        )
         return {
             "task_id": task_id,
             "status": status,
@@ -1427,8 +1629,16 @@ def resume_task(task_id: str, requested_by: str) -> dict[str, Any]:
     if status != "blocked":
         raise ValueError(f"Task {task_id} must be blocked before resume")
 
-    result = dispatch_task_if_ready(task, mode, db_path)
-    append_task_event(task_id, f"resume_requested by={requested_by}", db_path)
+    result = dispatch_task_if_ready(task, mode, db_path, trace_id)
+    append_task_event(
+        task_id,
+        f"resume_requested by={requested_by}",
+        db_path,
+        trace_id=trace_id,
+        event="resume_requested",
+        status="ok",
+        meta={"requested_by": requested_by},
+    )
     return result
 
 
@@ -1439,6 +1649,7 @@ def approve_task(
     note: str,
     decision: str,
     defer_dispatch: bool = False,
+    trace_id: str = "",
 ) -> dict[str, Any]:
     mode = autonomy_mode()
     if mode == "readonly":
@@ -1449,6 +1660,10 @@ def approve_task(
     ).resolve()
 
     task = run_registry(["get", "--task-id", task_id], db_path)
+    if not trace_id:
+        metadata = task.get("metadata", {})
+        if isinstance(metadata, dict):
+            trace_id = str(metadata.get("trace_id", "")).strip()
     if task.get("status") != "blocked":
         raise ValueError(f"Task {task_id} must be blocked before approval decision")
     if not task.get("approvals"):
@@ -1490,6 +1705,10 @@ def approve_task(
             task_id,
             f"approval_rejected action={action_category} by={decided_by}",
             db_path,
+            trace_id=trace_id,
+            event="approval_rejected",
+            status="cancelled",
+            meta={"action_category": action_category, "decided_by": decided_by},
         )
         return {
             "task_id": task_id,
@@ -1509,6 +1728,10 @@ def approve_task(
                 f"action={action_category} decision={decision} by={decided_by}"
             ),
             db_path,
+            trace_id=trace_id,
+            event="approval_recorded",
+            status="blocked",
+            meta={"action_category": action_category, "decided_by": decided_by},
         )
         return {
             "task_id": task_id,
@@ -1521,7 +1744,7 @@ def approve_task(
             "message": "Approval recorded; use resume to execute when ready",
         }
 
-    dispatch_result = dispatch_task_if_ready(refreshed_task, mode, db_path)
+    dispatch_result = dispatch_task_if_ready(refreshed_task, mode, db_path, trace_id)
     append_task_event(
         task_id,
         (
@@ -1529,6 +1752,10 @@ def approve_task(
             f"action={action_category} decision={decision} by={decided_by}"
         ),
         db_path,
+        trace_id=trace_id,
+        event="approval_processed",
+        status=dispatch_result.get("status", "ok"),
+        meta={"action_category": action_category, "decided_by": decided_by},
     )
 
     return {
@@ -1550,6 +1777,7 @@ def parse_args() -> argparse.Namespace:
     route_parser = sub.add_parser("route", help="Classify and dispatch a task")
     route_parser.add_argument("--task-type", required=True)
     route_parser.add_argument("--prompt", required=True)
+    route_parser.add_argument("--trace-id", default="")
 
     classify_parser = sub.add_parser("classify", help="Classify task without dispatch")
     classify_parser.add_argument("--task-type", required=True)
@@ -1570,6 +1798,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Record approval only; do not dispatch until explicit resume",
     )
+    approve_parser.add_argument("--trace-id", default="")
 
     plan_parser = sub.add_parser(
         "record-plan", help="Record planner artifact for heavy task"
@@ -1577,6 +1806,7 @@ def parse_args() -> argparse.Namespace:
     plan_parser.add_argument("--task-id", required=True)
     plan_parser.add_argument("--author", required=True)
     plan_parser.add_argument("--summary", required=True)
+    plan_parser.add_argument("--trace-id", default="")
 
     review_parser = sub.add_parser(
         "record-review", help="Record reviewer artifact and verdict for heavy task"
@@ -1587,12 +1817,14 @@ def parse_args() -> argparse.Namespace:
     review_parser.add_argument("--reason-code", default="")
     review_parser.add_argument("--checklist-json", default="{}")
     review_parser.add_argument("--notes", default="")
+    review_parser.add_argument("--trace-id", default="")
 
     resume_parser = sub.add_parser(
         "resume", help="Resume blocked task once all gates are satisfied"
     )
     resume_parser.add_argument("--task-id", required=True)
     resume_parser.add_argument("--requested-by", required=True)
+    resume_parser.add_argument("--trace-id", default="")
 
     return parser.parse_args()
 
@@ -1654,7 +1886,7 @@ def main() -> int:
             return 0
 
         if args.command == "route":
-            result = route_task(args.task_type, args.prompt)
+            result = route_task(args.task_type, args.prompt, args.trace_id)
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
 
@@ -1666,12 +1898,13 @@ def main() -> int:
                 note=args.note,
                 decision=args.decision,
                 defer_dispatch=args.defer_dispatch,
+                trace_id=args.trace_id,
             )
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
 
         if args.command == "record-plan":
-            result = record_plan(args.task_id, args.author, args.summary)
+            result = record_plan(args.task_id, args.author, args.summary, args.trace_id)
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
 
@@ -1683,12 +1916,13 @@ def main() -> int:
                 reason_code=args.reason_code,
                 checklist_json=args.checklist_json,
                 notes=args.notes,
+                trace_id=args.trace_id,
             )
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
 
         if args.command == "resume":
-            result = resume_task(args.task_id, args.requested_by)
+            result = resume_task(args.task_id, args.requested_by, args.trace_id)
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
 

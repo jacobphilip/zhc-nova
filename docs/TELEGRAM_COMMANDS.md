@@ -24,6 +24,7 @@ Source of truth for service command behavior: `services/telegram-control/command
 - Command execution uses transient retry policy (`TELEGRAM_COMMAND_RETRY_*`) with backoff and jitter.
 - `/resume` uses `TELEGRAM_RESUME_TIMEOUT_SECONDS` (default 600s) to allow heavy execution windows.
 - Duplicate Telegram updates are deduplicated via durable idempotency keys (`scope=telegram_command`).
+- Telegram `trace_id` (`tg-<update_id>`) is propagated into router task metadata and structured task events.
 - All high-risk actions require approval gate checks.
 - `/approve` records approval; `/resume` performs execution.
 - Rejected approvals cancel blocked tasks.
