@@ -70,6 +70,11 @@ python3 services/task-router/router.py route \
 - `storage/`: runtime task artifacts, memory, protected records, vault mirrors
 - `scripts/`: setup and diagnostics scripts
 
+## Telegram Runtime Ops
+
+- Long-polling runtime: `services/telegram-control/bot_longpoll.py`
+- Smoke-test checklist: `docs/TELEGRAM_SMOKETEST.md`
+
 ## Safety Defaults
 
 - Human approval required by default for destructive/deploy/compliance/money/customer-facing actions.

@@ -51,6 +51,9 @@ python3 shared/task-registry/task_registry.py get --task-id <task_id>
 
 # Run Telegram long-polling control plane
 python3 services/telegram-control/bot_longpoll.py
+
+# Telegram service logs (systemd)
+journalctl -u zhc-telegram-control.service -n 200 --no-pager
 ```
 
 ## Autonomy Modes
@@ -103,6 +106,7 @@ ls storage/tasks/<task_id>/artifacts
 
 - Task logs/artifacts: `storage/tasks/<task_id>/`
 - Telegram command audit: `storage/memory/telegram_command_audit.jsonl`
+- Telegram offset file: `storage/memory/telegram_offset.txt`
 - Runtime stdout/stderr: systemd journal (when enabled)
 
 ## Recovery
@@ -110,6 +114,19 @@ ls storage/tasks/<task_id>/artifacts
 - If DB missing/corrupt: backup file, recreate with `./scripts/db_init.sh`.
 - If dispatch fails: verify SSH key + `ZHC_UBUNTU_HOST` + remote path.
 - If task stuck in pending/running: append event and mark terminal state manually via CLI update.
+- If Telegram bot not responding:
+  - `sudo systemctl restart zhc-telegram-control.service`
+  - inspect logs: `journalctl -u zhc-telegram-control.service -n 200 --no-pager`
+- If offset appears stuck or replaying:
+  - `python3 services/telegram-control/bot_longpoll.py --show-offset`
+  - `python3 services/telegram-control/bot_longpoll.py --reset-offset`
+- If service fails with `lock_exists` and no active bot process:
+  - remove stale lock: `rm storage/memory/telegram_longpoll.lock`
+  - restart: `sudo systemctl restart zhc-telegram-control.service`
+
+## Telegram Smoke Test
+
+- Run `docs/TELEGRAM_SMOKETEST.md` after deploy/restart.
 
 ## External Brain Fallback
 

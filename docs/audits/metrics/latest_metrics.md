@@ -1,7 +1,7 @@
 # ZHC-Nova Metrics Report - latest
 
-- Generated: 2026-02-25T15:56:20.585217+00:00
-- Window: 2026-02-18T15:56:20.583836+00:00 -> 2026-02-25T15:56:20.583836+00:00
+- Generated: 2026-02-25T16:08:33.667523+00:00
+- Window: 2026-02-18T16:08:33.664603+00:00 -> 2026-02-25T16:08:33.664603+00:00
 
 ## KPI Summary
 
@@ -10,7 +10,7 @@
 - Approval latency: median=0.01m p90=0.14m
 - Review gate: pass_rate=0.1429 pass=1 fail=0 missing=6
 - Telemetry: avg_dispatch_ms=17.0 total_cost_usd=0.020452 total_tokens=451
-- Telegram: success_rate=0 error_rate=0 unauthorized=0
+- Telegram: success_rate=0 error_rate=0 unauthorized=0 poll_errors=0 timeouts=0
 
 ## Top 5 Next Actions
 

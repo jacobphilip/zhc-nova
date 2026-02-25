@@ -8,8 +8,15 @@ Type=simple
 WorkingDirectory=/opt/zhc-nova
 EnvironmentFile=/opt/zhc-nova/.env
 ExecStart=/usr/bin/env python3 /opt/zhc-nova/services/telegram-control/bot_longpoll.py
-Restart=on-failure
+Restart=always
 RestartSec=5
+StartLimitIntervalSec=120
+StartLimitBurst=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/zhc-nova/storage
 
 [Install]
 WantedBy=multi-user.target

@@ -5,7 +5,7 @@
     "Enable OpenRouter pricing enrichment to improve cost signal quality.",
     "Improve context compaction effectiveness (target lower average compression ratio)."
   ],
-  "generated_at": "2026-02-25T15:56:25.739904+00:00",
+  "generated_at": "2026-02-25T16:08:42.384523+00:00",
   "iteration": "2026-02-25-v1.1",
   "summary": {
     "approvals": {
@@ -55,7 +55,10 @@
     "telegram": {
       "command_count": 0,
       "command_counts": {},
+      "command_status_counts": {},
+      "command_timeout_count": 0,
       "error_rate": 0,
+      "poll_error_count": 0,
       "status_counts": {},
       "success_rate": 0,
       "unauthorized_count": 0
@@ -76,7 +79,7 @@
     }
   },
   "window": {
-    "end": "2026-02-25T15:56:25.738858+00:00",
-    "start": "2026-02-18T15:56:25.738858+00:00"
+    "end": "2026-02-25T16:08:42.383043+00:00",
+    "start": "2026-02-18T16:08:42.383043+00:00"
   }
 }

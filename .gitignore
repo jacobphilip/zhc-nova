@@ -16,6 +16,10 @@ storage/tasks/*.db-wal
 storage/tasks/*/
 !storage/tasks/.gitkeep
 
+# Runtime memory artifacts
+storage/memory/*
+!storage/memory/.gitkeep
+
 # Local editor/system
 .DS_Store
 .idea/

@@ -271,6 +271,7 @@ def summarize(
                 gate_latency_minutes.append((ts - start).total_seconds() / 60.0)
 
     command_counts: dict[str, int] = {}
+    command_status_counts: dict[str, dict[str, int]] = {}
     telegram_status_counts: dict[str, int] = {}
     for row in telegram_rows:
         status = str(row.get("status", "unknown"))
@@ -279,9 +280,13 @@ def summarize(
         if text.startswith("/"):
             cmd = text.split()[0].split("@", 1)[0].lower()
             command_counts[cmd] = command_counts.get(cmd, 0) + 1
+            cmd_bucket = command_status_counts.setdefault(cmd, {})
+            cmd_bucket[status] = cmd_bucket.get(status, 0) + 1
 
     telegram_total = len(telegram_rows)
     telegram_error = telegram_status_counts.get("error", 0)
+    telegram_timeout = telegram_status_counts.get("command_timeout", 0)
+    poll_error_count = telegram_status_counts.get("poll_error", 0)
     telegram_ok = telegram_status_counts.get("ok", 0)
 
     return {
@@ -346,14 +351,17 @@ def summarize(
         "telegram": {
             "command_count": sum(command_counts.values()),
             "command_counts": command_counts,
+            "command_status_counts": command_status_counts,
             "status_counts": telegram_status_counts,
             "success_rate": round(telegram_ok / telegram_total, 4)
             if telegram_total
             else 0,
-            "error_rate": round(telegram_error / telegram_total, 4)
+            "error_rate": round((telegram_error + telegram_timeout) / telegram_total, 4)
             if telegram_total
             else 0,
             "unauthorized_count": telegram_status_counts.get("unauthorized", 0),
+            "poll_error_count": poll_error_count,
+            "command_timeout_count": telegram_timeout,
         },
     }
 
@@ -375,6 +383,11 @@ def recommendations(summary: dict[str, Any]) -> list[str]:
     if float(summary["telegram"]["error_rate"]) > 0.1:
         out.append(
             "Reduce Telegram command error rate with stricter input validation/help hints."
+        )
+
+    if int(summary["telegram"]["poll_error_count"]) > 0:
+        out.append(
+            "Stabilize Telegram polling loop and restart behavior to reduce poll errors."
         )
 
     if summary["telemetry"]["cost_source_counts"].get("openrouter_api", 0) == 0:
@@ -427,7 +440,10 @@ def render_markdown(
         f"- Telemetry: avg_dispatch_ms={telemetry['avg_dispatch_duration_ms']} total_cost_usd={telemetry['total_estimated_cost_usd']} total_tokens={telemetry['total_estimated_tokens']}"
     )
     lines.append(
-        f"- Telegram: success_rate={telegram['success_rate']} error_rate={telegram['error_rate']} unauthorized={telegram['unauthorized_count']}"
+        "- Telegram: "
+        f"success_rate={telegram['success_rate']} error_rate={telegram['error_rate']} "
+        f"unauthorized={telegram['unauthorized_count']} poll_errors={telegram['poll_error_count']} "
+        f"timeouts={telegram['command_timeout_count']}"
     )
     lines.append("")
 
