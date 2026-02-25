@@ -150,17 +150,26 @@ ls storage/tasks/<task_id>/artifacts
 - If dispatch fails: verify SSH key + `ZHC_UBUNTU_HOST` + remote path.
 - If task stuck in pending/running: append event and mark terminal state manually via CLI update.
 - If Telegram bot not responding:
-  - `sudo systemctl restart zhc-telegram-control.service`
-  - inspect logs: `journalctl -u zhc-telegram-control.service -n 200 --no-pager`
+  - user service mode: `systemctl --user restart zhc-telegram-control.service`
+  - system service mode: `sudo systemctl restart zhc-telegram-control.service`
+  - inspect logs (user): `journalctl --user-unit zhc-telegram-control.service -n 200 --no-pager`
+  - inspect logs (system): `journalctl -u zhc-telegram-control.service -n 200 --no-pager`
 - If ZeroClaw gateway not responding:
-  - `sudo systemctl restart zeroclaw-gateway.service`
-  - inspect logs: `journalctl -u zeroclaw-gateway.service -n 200 --no-pager`
+  - user service mode: `systemctl --user restart zeroclaw-gateway.service`
+  - system service mode: `sudo systemctl restart zeroclaw-gateway.service`
+  - inspect logs (user): `journalctl --user-unit zeroclaw-gateway.service -n 200 --no-pager`
+  - inspect logs (system): `journalctl -u zeroclaw-gateway.service -n 200 --no-pager`
 - If offset appears stuck or replaying:
   - `python3 services/telegram-control/bot_longpoll.py --show-offset`
   - `python3 services/telegram-control/bot_longpoll.py --reset-offset`
 - If service fails with `lock_exists` and no active bot process:
   - remove stale lock: `rm storage/memory/telegram_longpoll.lock`
-  - restart: `sudo systemctl restart zhc-telegram-control.service`
+  - restart (user): `systemctl --user restart zhc-telegram-control.service`
+  - restart (system): `sudo systemctl restart zhc-telegram-control.service`
+- If `/resume` times out in Telegram:
+  - verify current state: `/status <task_id>`
+  - if task is still `blocked`, run `/resume <task_id>` once more
+  - for persistent timeouts, increase `TELEGRAM_RESUME_TIMEOUT_SECONDS` and restart telegram service
 
 ## Telegram Smoke Test
 
