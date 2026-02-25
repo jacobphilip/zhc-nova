@@ -1109,6 +1109,7 @@ def approve_task(
     decided_by: str,
     note: str,
     decision: str,
+    defer_dispatch: bool = False,
 ) -> dict[str, Any]:
     mode = autonomy_mode()
     if mode == "readonly":
@@ -1170,6 +1171,27 @@ def approve_task(
         }
 
     refreshed_task = run_registry(["get", "--task-id", task_id], db_path)
+    if defer_dispatch:
+        pending = dispatch_blockers(refreshed_task)
+        append_task_event(
+            task_id,
+            (
+                "approval_decision_recorded_deferred "
+                f"action={action_category} decision={decision} by={decided_by}"
+            ),
+            db_path,
+        )
+        return {
+            "task_id": task_id,
+            "status": "blocked",
+            "action_category": action_category,
+            "decision": decision,
+            "autonomy_mode": mode,
+            "pending": pending,
+            "review_gate": review_gate_status(task_id),
+            "message": "Approval recorded; use resume to execute when ready",
+        }
+
     dispatch_result = dispatch_task_if_ready(refreshed_task, mode, db_path)
     append_task_event(
         task_id,
@@ -1213,6 +1235,11 @@ def parse_args() -> argparse.Namespace:
     approve_parser.add_argument("--note", default="")
     approve_parser.add_argument(
         "--decision", choices=["approved", "rejected"], default="approved"
+    )
+    approve_parser.add_argument(
+        "--defer-dispatch",
+        action="store_true",
+        help="Record approval only; do not dispatch until explicit resume",
     )
 
     plan_parser = sub.add_parser(
@@ -1309,6 +1336,7 @@ def main() -> int:
                 decided_by=args.decided_by,
                 note=args.note,
                 decision=args.decision,
+                defer_dispatch=args.defer_dispatch,
             )
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0

@@ -21,7 +21,9 @@ Source of truth for service command behavior: `services/telegram-control/command
 - Runtime implementation: `services/telegram-control/bot_longpoll.py` (long polling).
 - Command audit log: `storage/memory/telegram_command_audit.jsonl`.
 - Runtime protections: allowlist enforcement, per-chat rate limiting, command timeout, exponential poll backoff.
+- `/resume` uses `TELEGRAM_RESUME_TIMEOUT_SECONDS` (default 600s) to allow heavy execution windows.
 - All high-risk actions require approval gate checks.
-- Approved actions resume blocked tasks; rejected actions cancel blocked tasks.
+- `/approve` records approval; `/resume` performs execution.
+- Rejected approvals cancel blocked tasks.
 - `UBUNTU_HEAVY` tasks require planner/reviewer artifacts (review verdict `pass`) before resume.
 - Reviewer fail reason codes: `policy_conflict`, `missing_tests`, `insufficient_plan`, `high_risk_unmitigated`, `artifact_incomplete`, `other`.

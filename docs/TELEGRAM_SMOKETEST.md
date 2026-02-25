@@ -6,6 +6,7 @@ Run this checklist after deploy/restart of Telegram runtime.
 
 - `zhc-telegram-control.service` is active
 - `.env` has valid `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_CHAT_IDS`
+- `.env` sets `TELEGRAM_RESUME_TIMEOUT_SECONDS` high enough for heavy resumes (default 600)
 - `.env` sets `ZHC_RUNTIME_MODE=single_node` for Ubuntu-first validation
 - Task DB initialized
 
@@ -15,12 +16,12 @@ Run this checklist after deploy/restart of Telegram runtime.
 2. `/list 5`
 3. `/status <task_id_from_step_1>`
 4. `/newtask code_refactor smoke heavy`
-5. `/approve <heavy_task_id> supervised_heavy_execution approved`
-6. `/plan <heavy_task_id> smoke test plan`
-7. `/review <heavy_task_id> fail missing_tests add tests first`
-8. `/resume <heavy_task_id>` (expect blocked with review_failed reason)
-9. `/review <heavy_task_id> pass smoke review`
-10. `/resume <heavy_task_id>`
+5. `/plan <heavy_task_id> smoke test plan`
+6. `/review <heavy_task_id> fail missing_tests add tests first`
+7. `/resume <heavy_task_id>` (expect blocked with review_failed reason)
+8. `/review <heavy_task_id> pass smoke review`
+9. `/approve <heavy_task_id> supervised_heavy_execution approved` (records approval only)
+10. `/resume <heavy_task_id>` (executes when gates are satisfied)
 11. `/board`
 12. `/stop <task_id_if_non-terminal>`
 

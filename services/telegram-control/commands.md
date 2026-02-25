@@ -41,8 +41,8 @@ Example:
 `/approve <task_id> <action_category> [note]`
 
 - Records human approval decision for gated actions.
-- If planner/reviewer gate is already satisfied, resumes blocked task execution when approved.
-- If planner/reviewer gate is not satisfied, keeps task blocked until review artifacts are recorded.
+- In Telegram runtime, approval is recorded without dispatch so command returns quickly.
+- Execute `/resume <task_id>` to run the task after approvals and review gates are satisfied.
 - If rejected, task is deterministically cancelled.
 
 ## /plan
@@ -75,6 +75,7 @@ Example:
 `/resume <task_id>`
 
 - Attempts to resume blocked task after approvals and review gate are satisfied.
+- Uses `TELEGRAM_RESUME_TIMEOUT_SECONDS` (default 600) in Telegram runtime.
 
 ## /stop
 

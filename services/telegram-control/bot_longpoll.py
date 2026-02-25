@@ -368,11 +368,12 @@ def handle_command(
                 actor,
                 "--note",
                 note,
+                "--defer-dispatch",
             ],
             config.command_timeout_seconds,
         )
         return (
-            f"Approved {task_id}: {result.get('status')} ({result.get('message')})",
+            f"Approved {task_id}: {result.get('message')}. Use /resume {task_id}",
             result,
         )
 
@@ -465,9 +466,13 @@ def handle_command(
     if cmd == "/resume":
         if len(args) != 1:
             raise ValueError("Usage: /resume <task_id>")
+        resume_timeout = max(
+            config.command_timeout_seconds,
+            int(os.getenv("TELEGRAM_RESUME_TIMEOUT_SECONDS", "600")),
+        )
         result = router_cmd(
             ["resume", "--task-id", args[0], "--requested-by", actor],
-            config.command_timeout_seconds,
+            resume_timeout,
         )
         return (
             f"Resume {args[0]}: {result.get('status')} ({result.get('message')})",
