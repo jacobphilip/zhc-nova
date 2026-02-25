@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -143,6 +144,21 @@ def runtime_mode() -> str:
         allowed = ", ".join(sorted(VALID_RUNTIME_MODES))
         raise ValueError(f"Invalid ZHC_RUNTIME_MODE '{mode}'. Allowed: {allowed}")
     return mode
+
+
+def dispatch_owner_id() -> str:
+    configured = os.getenv("ZHC_DISPATCH_OWNER", "").strip()
+    if configured:
+        return configured
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+def dispatch_lease_seconds() -> int:
+    raw = os.getenv("ZHC_DISPATCH_LEASE_SECONDS", "120").strip()
+    try:
+        return max(30, int(raw))
+    except ValueError:
+        return 120
 
 
 def evaluate_execution_policy(
@@ -931,6 +947,47 @@ def dispatch_task_if_ready(
         db_path,
     )
 
+    owner = dispatch_owner_id()
+    lease_seconds = dispatch_lease_seconds()
+    run_registry(
+        [
+            "lease-enqueue",
+            "--task-id",
+            task["task_id"],
+            "--owner-id",
+            owner,
+            "--lease-seconds",
+            str(lease_seconds),
+        ],
+        db_path,
+    )
+    claim = run_registry(
+        [
+            "lease-claim",
+            "--task-id",
+            task["task_id"],
+            "--owner-id",
+            owner,
+            "--lease-seconds",
+            str(lease_seconds),
+        ],
+        db_path,
+    )
+    if not bool(claim.get("claimed", False)):
+        reason = str(claim.get("reason", "unknown"))
+        append_task_event(
+            task["task_id"], f"lease_claim_denied reason={reason}", db_path
+        )
+        return {
+            "task_id": task["task_id"],
+            "status": "running",
+            "autonomy_mode": mode,
+            "runtime_mode": dispatch_runtime,
+            "pending": ["lease_held_by_other_owner"],
+            "review_gate": review_gate_status(task["task_id"]),
+            "message": f"Task already being dispatched by another owner ({reason})",
+        }
+
     run_registry(
         [
             "update",
@@ -966,6 +1023,39 @@ def dispatch_task_if_ready(
         dispatch_runtime,
     )
     dispatch_ms = max(1, int((time.perf_counter() - dispatch_started) * 1000))
+
+    terminal_status = dispatch_status
+    if terminal_status == "canceled":
+        terminal_status = "cancelled"
+    if terminal_status in {"succeeded", "failed", "cancelled", "expired"}:
+        run_registry(
+            [
+                "lease-finish",
+                "--task-id",
+                task["task_id"],
+                "--owner-id",
+                owner,
+                "--result-status",
+                terminal_status,
+                "--last-error",
+                "" if terminal_status == "succeeded" else dispatch_detail,
+            ],
+            db_path,
+        )
+    else:
+        run_registry(
+            [
+                "lease-heartbeat",
+                "--task-id",
+                task["task_id"],
+                "--owner-id",
+                owner,
+                "--lease-seconds",
+                str(lease_seconds),
+            ],
+            db_path,
+        )
+
     run_registry(
         [
             "update",
@@ -1119,6 +1209,14 @@ def resume_task(task_id: str, requested_by: str) -> dict[str, Any]:
     db_path = Path(
         os.getenv("ZHC_TASK_DB", str(repo_root() / "storage/tasks/task_registry.db"))
     ).resolve()
+    run_registry(
+        [
+            "lease-reconcile",
+            "--owner-id",
+            dispatch_owner_id(),
+        ],
+        db_path,
+    )
     task = run_registry(["get", "--task-id", task_id], db_path)
     status = str(task.get("status", "")).strip().lower()
     if status in {"succeeded", "failed", "cancelled", "expired"}:

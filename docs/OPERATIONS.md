@@ -135,6 +135,7 @@ Inspect artifacts for one task:
 ```bash
 python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
 ls storage/tasks/<task_id>/artifacts
+python3 shared/task-registry/task_registry.py --json lease-get --task-id <task_id>
 ```
 
 ## Logs and Artifacts
@@ -142,6 +143,7 @@ ls storage/tasks/<task_id>/artifacts
 - Task logs/artifacts: `storage/tasks/<task_id>/`
 - Telegram command audit: `storage/memory/telegram_command_audit.jsonl`
 - Telegram offset file: `storage/memory/telegram_offset.txt`
+- Dispatch lease record: `task_dispatch_lease` (query via `lease-get` / `lease-list`)
 - Runtime stdout/stderr: systemd journal (when enabled)
 
 ## Recovery

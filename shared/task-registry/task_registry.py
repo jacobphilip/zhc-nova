@@ -8,7 +8,7 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +33,8 @@ ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
     "requested": {"approved", "queued", "running", "blocked", "cancelled", "failed"},
     "pending": {"approved", "queued", "running", "blocked", "cancelled", "failed"},
     "approved": {"queued", "running", "blocked", "cancelled", "failed"},
-    "queued": {"running", "blocked", "cancelled", "failed", "expired"},
-    "running": {"succeeded", "failed", "blocked", "cancelled", "expired"},
+    "queued": {"queued", "running", "blocked", "cancelled", "failed", "expired"},
+    "running": {"running", "succeeded", "failed", "blocked", "cancelled", "expired"},
     "blocked": {
         "approved",
         "queued",
@@ -51,9 +51,25 @@ ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
     "expired": {"expired"},
 }
 
+ACTIVE_LEASE_STATUSES = {"queued", "running"}
+DEFAULT_LEASE_SECONDS = 120
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def utc_now_dt() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def default_db_path() -> Path:
@@ -393,6 +409,304 @@ def get_approvals(db_path: Path, task_id: str) -> dict[str, Any]:
     return {"task_id": task_id, "approvals": [dict(row) for row in rows]}
 
 
+def ensure_task_exists(conn: sqlite3.Connection, task_id: str) -> None:
+    row = conn.execute(
+        "SELECT task_id FROM tasks WHERE task_id = ?", (task_id,)
+    ).fetchone()
+    if not row:
+        raise KeyError(f"Task not found: {task_id}")
+
+
+def get_dispatch_lease(db_path: Path, task_id: str) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        ensure_task_exists(conn, task_id)
+        row = conn.execute(
+            """
+            SELECT task_id, owner_id, lease_status, attempt_count, lease_expires_at,
+                   heartbeat_at, last_error, created_at, updated_at
+            FROM task_dispatch_lease
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+    return {"task_id": task_id, "lease": dict(row) if row else None}
+
+
+def list_dispatch_leases(
+    db_path: Path, status: str | None = None, limit: int = 50
+) -> dict[str, Any]:
+    query = (
+        "SELECT task_id, owner_id, lease_status, attempt_count, lease_expires_at, "
+        "heartbeat_at, last_error, created_at, updated_at "
+        "FROM task_dispatch_lease"
+    )
+    params: list[Any] = []
+    if status:
+        query += " WHERE lease_status = ?"
+        params.append(status)
+    query += " ORDER BY updated_at DESC LIMIT ?"
+    params.append(limit)
+    with connect(db_path) as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+    return {"leases": [dict(row) for row in rows], "limit": limit, "status": status}
+
+
+def enqueue_dispatch_lease(
+    db_path: Path,
+    task_id: str,
+    owner_id: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> dict[str, Any]:
+    now_dt = utc_now_dt()
+    now = now_dt.isoformat()
+    expires = (now_dt + timedelta(seconds=max(1, lease_seconds))).isoformat()
+    with connect(db_path) as conn:
+        ensure_task_exists(conn, task_id)
+        row = conn.execute(
+            """
+            SELECT owner_id, lease_status, attempt_count, lease_expires_at
+            FROM task_dispatch_lease
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        if not row:
+            conn.execute(
+                """
+                INSERT INTO task_dispatch_lease (
+                    task_id, owner_id, lease_status, attempt_count,
+                    lease_expires_at, heartbeat_at, last_error, created_at, updated_at
+                ) VALUES (?, ?, 'queued', 0, ?, ?, '', ?, ?)
+                """,
+                (task_id, owner_id, expires, now, now, now),
+            )
+            append_event(conn, task_id, "lease", f"enqueue owner={owner_id}")
+        else:
+            status = str(row["lease_status"])
+            current_exp = parse_ts(str(row["lease_expires_at"]))
+            expired = not current_exp or current_exp <= now_dt
+            if status in {"succeeded", "failed", "cancelled", "expired"} or expired:
+                conn.execute(
+                    """
+                    UPDATE task_dispatch_lease
+                    SET owner_id = ?, lease_status = 'queued', lease_expires_at = ?,
+                        heartbeat_at = ?, updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (owner_id, expires, now, now, task_id),
+                )
+                append_event(conn, task_id, "lease", f"enqueue_reset owner={owner_id}")
+            else:
+                append_event(
+                    conn,
+                    task_id,
+                    "lease",
+                    (f"enqueue_noop owner={row['owner_id']} status={status}"),
+                )
+        conn.commit()
+    return get_dispatch_lease(db_path, task_id)
+
+
+def claim_dispatch_lease(
+    db_path: Path,
+    task_id: str,
+    owner_id: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> dict[str, Any]:
+    now_dt = utc_now_dt()
+    now = now_dt.isoformat()
+    expires = (now_dt + timedelta(seconds=max(1, lease_seconds))).isoformat()
+    with connect(db_path) as conn:
+        ensure_task_exists(conn, task_id)
+        row = conn.execute(
+            """
+            SELECT owner_id, lease_status, attempt_count, lease_expires_at
+            FROM task_dispatch_lease
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        if not row:
+            conn.execute(
+                """
+                INSERT INTO task_dispatch_lease (
+                    task_id, owner_id, lease_status, attempt_count,
+                    lease_expires_at, heartbeat_at, last_error, created_at, updated_at
+                ) VALUES (?, ?, 'running', 1, ?, ?, '', ?, ?)
+                """,
+                (task_id, owner_id, expires, now, now, now),
+            )
+            append_event(
+                conn, task_id, "lease", f"claim_new owner={owner_id} attempts=1"
+            )
+            conn.commit()
+            return {"task_id": task_id, "claimed": True, "reason": "created"}
+
+        status = str(row["lease_status"])
+        current_owner = str(row["owner_id"])
+        attempt_count = int(row["attempt_count"] or 0)
+        current_exp = parse_ts(str(row["lease_expires_at"]))
+        expired = not current_exp or current_exp <= now_dt
+
+        if status == "running" and not expired and current_owner != owner_id:
+            append_event(
+                conn,
+                task_id,
+                "lease",
+                f"claim_denied owner={owner_id} held_by={current_owner}",
+            )
+            conn.commit()
+            return {
+                "task_id": task_id,
+                "claimed": False,
+                "reason": "held_by_other_owner",
+                "held_by": current_owner,
+            }
+
+        if status == "running" and not expired and current_owner == owner_id:
+            conn.execute(
+                """
+                UPDATE task_dispatch_lease
+                SET lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+                WHERE task_id = ?
+                """,
+                (expires, now, now, task_id),
+            )
+            append_event(conn, task_id, "lease", f"claim_refresh owner={owner_id}")
+            conn.commit()
+            return {"task_id": task_id, "claimed": True, "reason": "refreshed"}
+
+        next_attempt = attempt_count + 1
+        conn.execute(
+            """
+            UPDATE task_dispatch_lease
+            SET owner_id = ?, lease_status = 'running', attempt_count = ?,
+                lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (owner_id, next_attempt, expires, now, now, task_id),
+        )
+        append_event(
+            conn,
+            task_id,
+            "lease",
+            f"claim owner={owner_id} attempts={next_attempt}",
+        )
+        conn.commit()
+    return {"task_id": task_id, "claimed": True, "reason": "claimed"}
+
+
+def heartbeat_dispatch_lease(
+    db_path: Path,
+    task_id: str,
+    owner_id: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> dict[str, Any]:
+    now_dt = utc_now_dt()
+    now = now_dt.isoformat()
+    expires = (now_dt + timedelta(seconds=max(1, lease_seconds))).isoformat()
+    with connect(db_path) as conn:
+        ensure_task_exists(conn, task_id)
+        row = conn.execute(
+            "SELECT owner_id, lease_status FROM task_dispatch_lease WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"No lease exists for task {task_id}")
+        if str(row["owner_id"]) != owner_id:
+            raise ValueError(f"Lease owner mismatch for task {task_id}")
+        if str(row["lease_status"]) != "running":
+            raise ValueError(f"Lease is not running for task {task_id}")
+        conn.execute(
+            """
+            UPDATE task_dispatch_lease
+            SET lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (expires, now, now, task_id),
+        )
+        append_event(conn, task_id, "lease", f"heartbeat owner={owner_id}")
+        conn.commit()
+    return get_dispatch_lease(db_path, task_id)
+
+
+def finish_dispatch_lease(
+    db_path: Path,
+    task_id: str,
+    owner_id: str,
+    result_status: str,
+    last_error: str,
+) -> dict[str, Any]:
+    terminal = result_status.strip().lower()
+    if terminal == "canceled":
+        terminal = "cancelled"
+    if terminal not in {"succeeded", "failed", "cancelled", "expired"}:
+        raise ValueError(
+            "result_status must be one of: succeeded, failed, cancelled, expired"
+        )
+    now = utc_now()
+    with connect(db_path) as conn:
+        ensure_task_exists(conn, task_id)
+        row = conn.execute(
+            "SELECT owner_id FROM task_dispatch_lease WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"No lease exists for task {task_id}")
+        if str(row["owner_id"]) != owner_id:
+            raise ValueError(f"Lease owner mismatch for task {task_id}")
+        conn.execute(
+            """
+            UPDATE task_dispatch_lease
+            SET lease_status = ?, lease_expires_at = ?, heartbeat_at = ?,
+                last_error = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (terminal, now, now, last_error, now, task_id),
+        )
+        append_event(
+            conn,
+            task_id,
+            "lease",
+            f"finish owner={owner_id} status={terminal}",
+        )
+        conn.commit()
+    return get_dispatch_lease(db_path, task_id)
+
+
+def reconcile_dispatch_leases(db_path: Path, owner_id: str) -> dict[str, Any]:
+    now_dt = utc_now_dt()
+    now = now_dt.isoformat()
+    reconciled = 0
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT task_id, lease_status, lease_expires_at
+            FROM task_dispatch_lease
+            WHERE lease_status IN ('queued', 'running')
+            """
+        ).fetchall()
+        for row in rows:
+            exp = parse_ts(str(row["lease_expires_at"]))
+            if exp and exp > now_dt:
+                continue
+            task_id = str(row["task_id"])
+            conn.execute(
+                """
+                UPDATE task_dispatch_lease
+                SET owner_id = ?, lease_status = 'queued', last_error = ?, updated_at = ?
+                WHERE task_id = ?
+                """,
+                (owner_id, "lease_expired_reconciled", now, task_id),
+            )
+            append_event(
+                conn, task_id, "lease", f"reconcile_expired new_owner={owner_id}"
+            )
+            reconciled += 1
+        conn.commit()
+    return {"owner_id": owner_id, "reconciled": reconciled, "at": now}
+
+
 def list_tasks(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -516,12 +830,22 @@ def get_task(db_path: Path, task_id: str) -> dict[str, Any]:
             """,
             (task_id,),
         ).fetchall()
+        lease = conn.execute(
+            """
+            SELECT task_id, owner_id, lease_status, attempt_count, lease_expires_at,
+                   heartbeat_at, last_error, created_at, updated_at
+            FROM task_dispatch_lease
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
 
     task = dict(row)
     task["requires_approval"] = bool(task["requires_approval"])
     task["metadata"] = json.loads(task.pop("metadata_json") or "{}")
     task["events"] = [dict(e) for e in events]
     task["approvals"] = [dict(a) for a in approvals]
+    task["dispatch_lease"] = dict(lease) if lease else None
     return task
 
 
@@ -611,6 +935,51 @@ def parse_args() -> argparse.Namespace:
     p_metadata_merge.add_argument("--metadata", required=True, help="JSON object")
     p_metadata_merge.add_argument("--detail", default="metadata_merge")
 
+    p_lease_enqueue = sub.add_parser(
+        "lease-enqueue", help="Create/refresh queued lease"
+    )
+    p_lease_enqueue.add_argument("--task-id", required=True)
+    p_lease_enqueue.add_argument("--owner-id", required=True)
+    p_lease_enqueue.add_argument(
+        "--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS
+    )
+
+    p_lease_claim = sub.add_parser("lease-claim", help="Claim lease for dispatch owner")
+    p_lease_claim.add_argument("--task-id", required=True)
+    p_lease_claim.add_argument("--owner-id", required=True)
+    p_lease_claim.add_argument(
+        "--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS
+    )
+
+    p_lease_heartbeat = sub.add_parser(
+        "lease-heartbeat", help="Heartbeat running lease"
+    )
+    p_lease_heartbeat.add_argument("--task-id", required=True)
+    p_lease_heartbeat.add_argument("--owner-id", required=True)
+    p_lease_heartbeat.add_argument(
+        "--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS
+    )
+
+    p_lease_finish = sub.add_parser(
+        "lease-finish", help="Finish lease with terminal status"
+    )
+    p_lease_finish.add_argument("--task-id", required=True)
+    p_lease_finish.add_argument("--owner-id", required=True)
+    p_lease_finish.add_argument("--result-status", required=True)
+    p_lease_finish.add_argument("--last-error", default="")
+
+    p_lease_reconcile = sub.add_parser(
+        "lease-reconcile", help="Reconcile expired active leases"
+    )
+    p_lease_reconcile.add_argument("--owner-id", required=True)
+
+    p_lease_get = sub.add_parser("lease-get", help="Get dispatch lease for a task")
+    p_lease_get.add_argument("--task-id", required=True)
+
+    p_lease_list = sub.add_parser("lease-list", help="List dispatch leases")
+    p_lease_list.add_argument("--status", default="")
+    p_lease_list.add_argument("--limit", type=int, default=50)
+
     return parser.parse_args()
 
 
@@ -625,8 +994,7 @@ def main() -> int:
             print(f"Initialized DB: {db_path}")
             return 0
 
-        if not db_path.exists():
-            init_db(db_path, schema_path)
+        init_db(db_path, schema_path)
 
         if args.command == "create":
             try:
@@ -715,6 +1083,63 @@ def main() -> int:
                 metadata_patch=metadata_patch,
                 detail=args.detail,
             )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "lease-enqueue":
+            result = enqueue_dispatch_lease(
+                db_path,
+                args.task_id,
+                args.owner_id,
+                args.lease_seconds,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "lease-claim":
+            result = claim_dispatch_lease(
+                db_path,
+                args.task_id,
+                args.owner_id,
+                args.lease_seconds,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "lease-heartbeat":
+            result = heartbeat_dispatch_lease(
+                db_path,
+                args.task_id,
+                args.owner_id,
+                args.lease_seconds,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "lease-finish":
+            result = finish_dispatch_lease(
+                db_path,
+                args.task_id,
+                args.owner_id,
+                args.result_status,
+                args.last_error,
+            )
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "lease-reconcile":
+            result = reconcile_dispatch_leases(db_path, args.owner_id)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "lease-get":
+            result = get_dispatch_lease(db_path, args.task_id)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "lease-list":
+            status = args.status.strip().lower() or None
+            result = list_dispatch_leases(db_path, status, args.limit)
             print_out(result, args.json)
             return 0
 
