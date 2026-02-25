@@ -1,16 +1,16 @@
 # ZHC-Nova Metrics Report - latest
 
-- Generated: 2026-02-25T17:06:11.917522+00:00
-- Window: 2026-02-18T17:06:11.914401+00:00 -> 2026-02-25T17:06:11.914401+00:00
+- Generated: 2026-02-25T17:13:24.792177+00:00
+- Window: 2026-02-18T17:13:24.787719+00:00 -> 2026-02-25T17:13:24.787719+00:00
 
 ## KPI Summary
 
-- Tasks: 35 (status: {'failed': 8, 'succeeded': 18, 'blocked': 8, 'cancelled': 1})
+- Tasks: 37 (status: {'succeeded': 20, 'failed': 8, 'blocked': 8, 'cancelled': 1})
 - Policy blocks: 3 ({'readonly_mode': 1, 'blocked_prompt_keyword': 1, 'unknown_task_type': 1})
-- Approval latency: median=0.01m p90=0.41m
-- Review gate: pass_rate=0.6667 pass=8 fail=0 missing=4 schema_complete_rate=0.4167 fail_then_pass=2
-- Telemetry: avg_dispatch_ms=9.26 total_cost_usd=0.061409 total_tokens=3523
-- Telegram: success_rate=0.7895 error_rate=0.0526 unauthorized=0 poll_errors=0 timeouts=0
+- Approval latency: median=0.01m p90=0.5m
+- Review gate: pass_rate=0.6923 pass=9 fail=0 missing=4 schema_complete_rate=0.4615 fail_then_pass=3
+- Telemetry: avg_dispatch_ms=10.19 total_cost_usd=0.061409 total_tokens=3915
+- Telegram: success_rate=0.8235 error_rate=0.0588 unauthorized=0 poll_errors=0 timeouts=0
 
 ## Top 5 Next Actions
 
