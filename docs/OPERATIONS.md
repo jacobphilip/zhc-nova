@@ -97,6 +97,20 @@ python3 shared/task-registry/task_registry.py --json get --task-id <task_id>
 - Router writes per-task telemetry into metadata (`dispatch_duration_ms`, `estimated_cost_usd`, model hints).
 - Router also writes context compaction + token estimates and cost artifacts.
 - View rollup with `python3 shared/task-registry/task_registry.py --json telemetry --limit 20`.
+- For OpenRouter price enrichment, set `OPENROUTER_API_KEY` and keep `ZHC_COST_LOOKUP_ENABLED=1`.
+- Verify enrichment with `python3 scripts/metrics_report.py ...` and check `cost_source_counts.openrouter_api`.
+
+OpenRouter enrichment quick check:
+
+```bash
+OPENROUTER_API_KEY=<real_key> make metrics
+python3 - <<'PY'
+import json
+from pathlib import Path
+payload = json.loads(Path('docs/audits/metrics/latest_metrics.json').read_text())
+print(payload['summary']['telemetry']['cost_source_counts'])
+PY
+```
 
 Inspect artifacts for one task:
 

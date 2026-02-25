@@ -38,6 +38,8 @@ REVIEW_CHECKLIST_KEYS = (
     "approval_constraints",
 )
 
+_OPENROUTER_PRICE_CACHE: dict[str, tuple[float, float] | None] = {}
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -230,33 +232,67 @@ def estimate_tokens(text: str) -> int:
     return max(1, (len(text) + 3) // 4)
 
 
+def compact_snippet(text: str, limit: int = 140) -> str:
+    clean = " ".join(text.split())
+    if len(clean) <= limit:
+        return clean
+    return clean[: limit - 3] + "..."
+
+
 def token_budget(route_class: str) -> int:
     if route_class == "UBUNTU_HEAVY":
         return int(os.getenv("ZHC_CONTEXT_TOKEN_BUDGET_HEAVY", "2400"))
     return int(os.getenv("ZHC_CONTEXT_TOKEN_BUDGET", "1200"))
 
 
+def target_ratio() -> float:
+    try:
+        val = float(os.getenv("ZHC_CONTEXT_TARGET_RATIO", "0.7"))
+    except ValueError:
+        return 0.7
+    return max(0.3, min(val, 1.0))
+
+
 def compact_text_to_token_budget(text: str, budget: int) -> tuple[str, int, int, float]:
     input_tokens = estimate_tokens(text)
-    if input_tokens <= budget:
+    if not text.strip():
         return text, input_tokens, input_tokens, 1.0
 
-    lines = text.splitlines()
+    effective_budget = min(budget, max(120, int(input_tokens * target_ratio())))
+    lines = [line.rstrip() for line in text.splitlines()]
     if not lines:
         return text, input_tokens, input_tokens, 1.0
 
-    head_count = max(4, len(lines) // 3)
-    tail_count = max(4, len(lines) // 3)
-    selected = lines[:head_count] + ["... [compacted] ..."] + lines[-tail_count:]
-    compacted = "\n".join(selected)
+    essential_lines: list[str] = []
+    retrieval_lines: list[str] = []
+    for line in lines:
+        if line.startswith("- "):
+            retrieval_lines.append(compact_snippet(line, 160))
+        elif line.strip():
+            essential_lines.append(compact_snippet(line, 200))
 
-    while estimate_tokens(compacted) > budget and (head_count > 2 or tail_count > 2):
-        if head_count > 2:
-            head_count -= 1
-        if tail_count > 2:
-            tail_count -= 1
-        selected = lines[:head_count] + ["... [compacted] ..."] + lines[-tail_count:]
-        compacted = "\n".join(selected)
+    selected: list[str] = []
+    for line in essential_lines:
+        selected.append(line)
+        if estimate_tokens("\n".join(selected)) >= effective_budget:
+            break
+
+    if retrieval_lines and estimate_tokens("\n".join(selected)) < effective_budget:
+        selected.append("retrieval:")
+        used = estimate_tokens("\n".join(selected))
+        for line in retrieval_lines:
+            test = "\n".join(selected + [line])
+            next_tokens = estimate_tokens(test)
+            if next_tokens > effective_budget:
+                break
+            selected.append(line)
+            used = next_tokens
+
+    compacted = "\n".join(selected) if selected else compact_snippet(text, 400)
+
+    if estimate_tokens(compacted) > budget:
+        trimmed = compacted[: max(80, int((budget * 4) * 0.9))]
+        compacted = compact_snippet(trimmed, len(trimmed))
 
     out_tokens = estimate_tokens(compacted)
     ratio = round(out_tokens / max(input_tokens, 1), 4)
@@ -288,7 +324,7 @@ def recent_memory_snippets(
                 "source": f"task:{row['task_id']}",
                 "text": (
                     f"task_type={row['task_type']} status={row['status']} "
-                    f"cost={metadata.get('estimated_cost_usd', 0)} prompt={row['prompt'][:180]}"
+                    f"cost={metadata.get('estimated_cost_usd', 0)} prompt={compact_snippet(row['prompt'], 120)}"
                 ),
             }
         )
@@ -302,7 +338,9 @@ def recent_memory_snippets(
                 text = path.read_text(encoding="utf-8")
             except OSError:
                 continue
-            snippets.append({"source": f"memory:{path.name}", "text": text[:300]})
+            snippets.append(
+                {"source": f"memory:{path.name}", "text": compact_snippet(text, 200)}
+            )
 
     return snippets
 
@@ -310,10 +348,15 @@ def recent_memory_snippets(
 def build_context_payload(task: dict[str, Any], db_path: Path) -> tuple[str, list[str]]:
     snippets = recent_memory_snippets(db_path, task["task_type"], limit=5)
     sources = [entry["source"] for entry in snippets]
+    approvals = task.get("approvals", [])
+    approval_status = approvals[-1].get("status") if approvals else "none"
     lines = [
         f"task_id={task['task_id']}",
         f"task_type={task['task_type']}",
         f"route_class={task['route_class']}",
+        f"risk_level={task.get('risk_level', 'unknown')}",
+        f"requires_approval={task.get('requires_approval', False)}",
+        f"approval_status={approval_status}",
         f"prompt={task['prompt']}",
         "",
         "retrieval:",
@@ -324,9 +367,13 @@ def build_context_payload(task: dict[str, Any], db_path: Path) -> tuple[str, lis
 
 
 def openrouter_model_pricing(model: str) -> tuple[float, float] | None:
+    if model in _OPENROUTER_PRICE_CACHE:
+        return _OPENROUTER_PRICE_CACHE[model]
+
     enabled = os.getenv("ZHC_COST_LOOKUP_ENABLED", "1").strip()
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if enabled != "1" or not api_key:
+        _OPENROUTER_PRICE_CACHE[model] = None
         return None
 
     timeout_ms = int(os.getenv("ZHC_COST_LOOKUP_TIMEOUT_MS", "3000"))
@@ -342,6 +389,7 @@ def openrouter_model_pricing(model: str) -> tuple[float, float] | None:
         with urllib.request.urlopen(req, timeout=timeout_ms / 1000) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        _OPENROUTER_PRICE_CACHE[model] = None
         return None
 
     for entry in payload.get("data", []):
@@ -352,9 +400,21 @@ def openrouter_model_pricing(model: str) -> tuple[float, float] | None:
             prompt = float(pricing.get("prompt", "0") or 0)
             completion = float(pricing.get("completion", "0") or 0)
         except (TypeError, ValueError):
+            _OPENROUTER_PRICE_CACHE[model] = None
             return None
-        return prompt, completion
+        _OPENROUTER_PRICE_CACHE[model] = (prompt, completion)
+        return _OPENROUTER_PRICE_CACHE[model]
+    _OPENROUTER_PRICE_CACHE[model] = None
     return None
+
+
+def cost_model_hint(model_hint: str) -> str:
+    configured = os.getenv("ZHC_COST_MODEL_DEFAULT", "").strip()
+    if configured:
+        return configured
+    if "/" in model_hint:
+        return model_hint
+    return "openai/gpt-4o-mini"
 
 
 def estimate_cost(
@@ -784,12 +844,13 @@ def dispatch_task_if_ready(
     if not provider_hint or not model_hint:
         provider_hint, model_hint = model_hint_for_task(task["task_type"])
 
+    pricing_model = cost_model_hint(model_hint)
     cost_info = estimate_cost(
         task["task_type"],
         task["route_class"],
         tokens_out,
         completion_tokens_est,
-        model_hint,
+        pricing_model,
     )
 
     artifacts_dir = task_dir(task["task_id"]) / "artifacts"
@@ -801,6 +862,7 @@ def dispatch_task_if_ready(
         "task_id": task["task_id"],
         "provider_hint": provider_hint,
         "model_hint": model_hint,
+        "pricing_model": pricing_model,
         "estimated_prompt_tokens": tokens_out,
         "estimated_completion_tokens": completion_tokens_est,
         "estimated_total_tokens": tokens_out + completion_tokens_est,
@@ -869,6 +931,7 @@ def dispatch_task_if_ready(
             "cost_estimate_path": str(cost_path),
             "model_provider_hint": provider_hint,
             "model_name_hint": model_hint,
+            "pricing_model": pricing_model,
             "last_dispatch_status": dispatch_status,
         },
         "telemetry_dispatch_resume",

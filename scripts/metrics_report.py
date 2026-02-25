@@ -437,9 +437,19 @@ def recommendations(summary: dict[str, Any]) -> list[str]:
             "Stabilize Telegram polling loop and restart behavior to reduce poll errors."
         )
 
-    if summary["telemetry"]["cost_source_counts"].get("openrouter_api", 0) == 0:
+    openrouter_count = int(
+        summary["telemetry"]["cost_source_counts"].get("openrouter_api", 0)
+    )
+    heuristic_count = int(
+        summary["telemetry"]["cost_source_counts"].get("heuristic", 0)
+    )
+    if openrouter_count == 0:
         out.append(
             "Enable OpenRouter pricing enrichment to improve cost signal quality."
+        )
+    elif heuristic_count > openrouter_count:
+        out.append(
+            "Increase OpenRouter-enriched pricing coverage; heuristic pricing still dominates."
         )
 
     if float(summary["telemetry"]["avg_compression_ratio"]) >= 0.9:
