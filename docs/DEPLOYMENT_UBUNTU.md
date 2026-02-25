@@ -84,6 +84,24 @@ sudo systemctl enable --now zeroclaw-gateway.service
 sudo systemctl status zeroclaw-gateway.service
 ```
 
+## User Services (recommended on dev laptop)
+
+If sudo/system services are not configured yet, install user-level services:
+
+```bash
+chmod +x scripts/install_user_services.sh
+make user-services
+```
+
+Check status/logs:
+
+```bash
+systemctl --user status zeroclaw-gateway.service
+systemctl --user status zhc-telegram-control.service
+journalctl --user-unit zeroclaw-gateway.service -n 100 --no-pager
+journalctl --user-unit zhc-telegram-control.service -n 100 --no-pager
+```
+
 ## TODO Integration Hooks
 
 - TODO: REAL_INTEGRATION - Telegram service startup process.

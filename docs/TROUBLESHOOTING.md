@@ -41,6 +41,8 @@ python3 shared/task-registry/task_registry.py update --task-id <task_id> --statu
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user status zhc-task-router.service
-journalctl --user-unit zhc-task-router.service -n 100
+systemctl --user status zeroclaw-gateway.service
+systemctl --user status zhc-telegram-control.service
+journalctl --user-unit zeroclaw-gateway.service -n 100 --no-pager
+journalctl --user-unit zhc-telegram-control.service -n 100 --no-pager
 ```

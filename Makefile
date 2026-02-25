@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services
 
 init-dev:
 	./scripts/init_dev.sh
@@ -32,3 +32,6 @@ telegram:
 
 zeroclaw-preflight:
 	./scripts/zeroclaw_preflight.sh
+
+user-services:
+	./scripts/install_user_services.sh

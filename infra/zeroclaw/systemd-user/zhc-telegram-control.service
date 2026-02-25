@@ -1,0 +1,18 @@
+[Unit]
+Description=ZHC-Nova Telegram Control (Long Polling, user)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=20
+
+[Service]
+Type=simple
+WorkingDirectory=%h/zhc-nova
+EnvironmentFile=%h/zhc-nova/.env
+ExecStartPre=/usr/bin/env bash -lc 'rm -f "%h/zhc-nova/storage/memory/telegram_longpoll.lock"'
+ExecStart=/usr/bin/env python3 %h/zhc-nova/services/telegram-control/bot_longpoll.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

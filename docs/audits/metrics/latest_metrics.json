@@ -4,14 +4,14 @@
     "Improve planner/reviewer quality: increase gate pass rate above 80%.",
     "Enforce complete reviewer checklist schema on all heavy-task reviews."
   ],
-  "generated_at": "2026-02-25T17:42:10.308700+00:00",
+  "generated_at": "2026-02-25T18:44:08.865954+00:00",
   "iteration": "latest",
   "summary": {
     "approvals": {
       "approval_status_counts": {
         "approved": 13,
         "rejected": 1,
-        "required": 3
+        "required": 4
       },
       "median_approval_latency_minutes": 0.1,
       "p90_approval_latency_minutes": 0.51
@@ -27,35 +27,35 @@
     "review_gate": {
       "fail_then_pass_count": 4,
       "gate_fail_count": 1,
-      "gate_missing_count": 4,
+      "gate_missing_count": 5,
       "gate_pass_count": 12,
-      "gate_pass_rate": 0.7059,
-      "heavy_task_count": 17,
+      "gate_pass_rate": 0.6667,
+      "heavy_task_count": 18,
       "median_gate_latency_minutes": 0.21,
       "p90_gate_latency_minutes": 1.88,
       "review_reason_counts": {
         "missing_tests": 1
       },
       "review_schema_complete_count": 10,
-      "review_schema_complete_rate": 0.5882
+      "review_schema_complete_rate": 0.5556
     },
     "task_flow": {
       "risk_counts": {
         "high": 3,
-        "low": 22,
-        "medium": 16
+        "low": 23,
+        "medium": 17
       },
       "route_counts": {
-        "PI_LIGHT": 24,
-        "UBUNTU_HEAVY": 17
+        "PI_LIGHT": 25,
+        "UBUNTU_HEAVY": 18
       },
       "status_counts": {
-        "blocked": 9,
+        "blocked": 10,
         "cancelled": 1,
         "failed": 8,
-        "succeeded": 23
+        "succeeded": 24
       },
-      "task_count": 41
+      "task_count": 43
     },
     "telegram": {
       "command_count": 54,
@@ -123,22 +123,22 @@
       "unauthorized_count": 0
     },
     "telemetry": {
-      "avg_compression_ratio": 0.6817,
-      "avg_dispatch_duration_ms": 6533.83,
-      "avg_estimated_cost_usd": 0.001498,
-      "avg_estimated_tokens": 110.29,
+      "avg_compression_ratio": 0.6764,
+      "avg_dispatch_duration_ms": 6272.52,
+      "avg_estimated_cost_usd": 0.00143,
+      "avg_estimated_tokens": 108.91,
       "cost_source_counts": {
-        "heuristic": 7,
+        "heuristic": 8,
         "openrouter_api": 16,
-        "unknown": 18
+        "unknown": 19
       },
       "p90_dispatch_duration_ms": 1146.0,
-      "total_estimated_cost_usd": 0.061409,
-      "total_estimated_tokens": 4522
+      "total_estimated_cost_usd": 0.061489,
+      "total_estimated_tokens": 4683
     }
   },
   "window": {
-    "end": "2026-02-25T17:42:10.303250+00:00",
-    "start": "2026-02-18T17:42:10.303250+00:00"
+    "end": "2026-02-25T18:44:08.862092+00:00",
+    "start": "2026-02-18T18:44:08.862092+00:00"
   }
 }
