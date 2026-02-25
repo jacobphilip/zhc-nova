@@ -1,0 +1,20 @@
+{
+  "version": "v1",
+  "default": {
+    "route_class": "PI_LIGHT",
+    "risk_level": "low",
+    "provider": "openai",
+    "model": "codex"
+  },
+  "task_type_overrides": {
+    "code_refactor": {"route_class": "UBUNTU_HEAVY", "risk_level": "medium"},
+    "code_review": {"route_class": "UBUNTU_HEAVY", "risk_level": "low"},
+    "build_fix": {"route_class": "UBUNTU_HEAVY", "risk_level": "medium"},
+    "deploy": {"route_class": "UBUNTU_HEAVY", "risk_level": "high"},
+    "ping": {"route_class": "PI_LIGHT", "risk_level": "low"}
+  },
+  "keyword_rules": {
+    "ubuntu_heavy": ["refactor", "compile", "test suite", "migration", "review"],
+    "high_risk": ["deploy", "delete", "remove", "customer", "compliance", "spray finalize"]
+  }
+}

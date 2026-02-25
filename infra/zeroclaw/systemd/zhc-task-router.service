@@ -1,0 +1,15 @@
+[Unit]
+Description=ZHC-Nova Task Router
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zhc-nova
+EnvironmentFile=/opt/zhc-nova/.env
+ExecStart=/usr/bin/env python3 /opt/zhc-nova/services/task-router/router.py classify --task-type ping --prompt "router heartbeat"
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

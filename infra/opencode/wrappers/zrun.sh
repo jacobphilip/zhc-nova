@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: zrun.sh --task-type TYPE --prompt PROMPT [--repo PATH] [--worktree PATH] [--task-id ID]
+
+Runs a routed OpenCode job wrapper and writes artifacts to storage/tasks/<task_id>/.
+
+TODO: REAL_INTEGRATION - replace stub invocation with final OpenCode non-interactive contract.
+EOF
+}
+
+TASK_TYPE=""
+PROMPT=""
+REPO_PATH=""
+WORKTREE_PATH=""
+TASK_ID=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --task-type)
+      TASK_TYPE="$2"
+      shift 2
+      ;;
+    --prompt)
+      PROMPT="$2"
+      shift 2
+      ;;
+    --repo)
+      REPO_PATH="$2"
+      shift 2
+      ;;
+    --worktree)
+      WORKTREE_PATH="$2"
+      shift 2
+      ;;
+    --task-id)
+      TASK_ID="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown arg: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$TASK_TYPE" || -z "$PROMPT" ]]; then
+  echo "ERROR: --task-type and --prompt are required" >&2
+  exit 2
+fi
+
+if [[ -z "$TASK_ID" ]]; then
+  TASK_ID="task-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+fi
+
+STORAGE_ROOT="${ZHC_STORAGE_ROOT:-storage}"
+TASK_DIR="${STORAGE_ROOT}/tasks/${TASK_ID}"
+mkdir -p "$TASK_DIR"
+
+PROVIDER="${ZHC_DEFAULT_PROVIDER:-openai}"
+MODEL="${ZHC_DEFAULT_MODEL:-codex}"
+
+case "$TASK_TYPE" in
+  code_review|plan|summary)
+    PROVIDER="${ZHC_FALLBACK_PROVIDER:-openrouter}"
+    MODEL="${ZHC_FALLBACK_MODEL:-reviewer-model}"
+    ;;
+esac
+
+RUN_LOG="$TASK_DIR/run.log"
+STDOUT_LOG="$TASK_DIR/stdout.log"
+STDERR_LOG="$TASK_DIR/stderr.log"
+META_JSON="$TASK_DIR/meta.json"
+
+{
+  echo "task_id=$TASK_ID"
+  echo "task_type=$TASK_TYPE"
+  echo "provider=$PROVIDER"
+  echo "model=$MODEL"
+  echo "repo=${REPO_PATH:-unset}"
+  echo "worktree=${WORKTREE_PATH:-unset}"
+  echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} >> "$RUN_LOG"
+
+cat > "$META_JSON" <<EOF
+{
+  "task_id": "$TASK_ID",
+  "task_type": "$TASK_TYPE",
+  "provider": "$PROVIDER",
+  "model": "$MODEL",
+  "repo": "${REPO_PATH}",
+  "worktree": "${WORKTREE_PATH}",
+  "status": "running"
+}
+EOF
+
+if [[ "${ZHC_ENABLE_REAL_OPENCODE:-0}" == "1" ]]; then
+  if ! command -v opencode >/dev/null 2>&1; then
+    echo "ERROR: opencode command not found" | tee -a "$RUN_LOG" >&2
+    exit 1
+  fi
+
+  # TODO: REAL_INTEGRATION - finalize opencode command flags and artifact contract.
+  set +e
+  opencode "$PROMPT" >"$STDOUT_LOG" 2>"$STDERR_LOG"
+  EXIT_CODE=$?
+  set -e
+else
+  {
+    echo "[STUB] OpenCode execution disabled"
+    echo "[STUB] Prompt: $PROMPT"
+    echo "[STUB] TODO: REAL_INTEGRATION"
+  } >"$STDOUT_LOG"
+  : >"$STDERR_LOG"
+  EXIT_CODE=0
+fi
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+  STATUS="succeeded"
+else
+  STATUS="failed"
+fi
+
+cat > "$META_JSON" <<EOF
+{
+  "task_id": "$TASK_ID",
+  "task_type": "$TASK_TYPE",
+  "provider": "$PROVIDER",
+  "model": "$MODEL",
+  "repo": "${REPO_PATH}",
+  "worktree": "${WORKTREE_PATH}",
+  "status": "$STATUS",
+  "exit_code": $EXIT_CODE
+}
+EOF
+
+echo "status=$STATUS exit_code=$EXIT_CODE" >> "$RUN_LOG"
+echo "$TASK_ID"
+exit "$EXIT_CODE"

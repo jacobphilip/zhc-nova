@@ -1,0 +1,23 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.tmp
+
+# SQLite runtime files
+storage/tasks/*.db
+storage/tasks/*.db-shm
+storage/tasks/*.db-wal
+
+# Task artifacts
+storage/tasks/*/
+!storage/tasks/.gitkeep
+
+# Local editor/system
+.DS_Store
+.idea/
+.vscode/
+.ruff_cache/

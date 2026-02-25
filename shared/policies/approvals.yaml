@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "default": {
+    "require_human_approval": false
+  },
+  "gates": {
+    "git_push": {"require_human_approval": true, "risk_level": "high"},
+    "deploy_restart": {"require_human_approval": true, "risk_level": "high"},
+    "delete_files": {"require_human_approval": true, "risk_level": "high"},
+    "scheduler_change": {"require_human_approval": true, "risk_level": "high"},
+    "compliance_finalize": {"require_human_approval": true, "risk_level": "high"},
+    "customer_outbound": {"require_human_approval": true, "risk_level": "high"}
+  }
+}
