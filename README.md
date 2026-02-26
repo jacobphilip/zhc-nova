@@ -123,6 +123,23 @@ Active next-step draft:
 - CP-007 ops surface spec: `docs/CP_007_OPS_SURFACE_DRAFT.md`
 - v1.2 closeout snapshot: `docs/V1_2_CLOSEOUT.md`
 
+## Watchlist
+
+- `RightNow-AI/openfang` (`https://github.com/RightNow-AI/openfang`): interesting Agent OS concept and worth monitoring, but still early for direct adoption in ZHC-Nova.
+- `vercel-labs/agent-browser` (`https://github.com/vercel-labs/agent-browser`): strong browser automation CLI candidate for scoped pilot integration.
+- `anthropics/skills` (`https://github.com/anthropics/skills`): reference implementation for reusable skill packaging and specification patterns.
+- `kepano/obsidian-skills` (`https://github.com/kepano/obsidian-skills`): practical cross-agent skills examples aligned to the same skills standard.
+- Scraping ecosystem notes (Python/Rust leaders and adoption order): `docs/SCRAPING_TOOLING_NOTES.md`.
+
+Skills adoption notes:
+
+- Spec: `docs/SKILLS_SPEC_ZHC.md`
+- Internal skill library: `skills/README.md`
+
+Pilot note:
+
+- `docs/AGENT_BROWSER_PILOT.md`
+
 ## Iteration Audits
 
 - Repeatable audit process: `docs/AUDIT_PROCESS.md`
