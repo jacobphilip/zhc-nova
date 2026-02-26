@@ -120,6 +120,7 @@ See `ROADMAP.md` for milestones from single-node v1 to multi-node swarm orchestr
 Active next-step draft:
 
 - CP-007 ops surface spec: `docs/CP_007_OPS_SURFACE_DRAFT.md`
+- v1.2 closeout snapshot: `docs/V1_2_CLOSEOUT.md`
 
 ## Iteration Audits
 

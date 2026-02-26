@@ -7,6 +7,7 @@ This is the execution board for the next hardening sprint.
 - Name: `Reliable Control Plane v1`
 - Target: single-node Ubuntu runtime that is replay-safe, restart-safe, and operator-predictable.
 - Exit gate: pass all checks in `v1.2 Gate` section below.
+- Closeout snapshot: `docs/V1_2_CLOSEOUT.md`
 
 ## Sprint Scope (10 working days)
 
