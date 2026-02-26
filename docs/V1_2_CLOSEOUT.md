@@ -22,17 +22,18 @@ make audit
 
 ## v1.2 Gate Status
 
-- Command handling success rate >= 99%: **not met** (latest telemetry reports `0.8859`)
+- Command handling success rate >= 99%: **met on post-hardening trace-scoped KPI** (`production_trace_command_success_rate=1.0`)
+- Historical 7-day blended production command success remains below target (`production_command_success_rate=0.9385`) due pre-hardening failures in-window.
 - Duplicate heavy executions = 0: **met**
 - Control invariants hold in automated tests: **met**
 - Poll timeout recovery >= 95%: **not yet evidenced** (timeouts/poll errors still present)
 - MTTR <= 10 minutes: **not yet evidenced**
 - End-to-end traceability exists for sampled tasks: **met** (`trace-events` + structured router events)
 
-Overall gate outcome: **partial pass** (reliability hardening complete through CP-008, final KPI thresholds still pending).
+Overall gate outcome: **partial pass** (core control-plane hardening complete through CP-008; remaining closeout work is runtime recovery/MTTR evidence quality).
 
 ## Immediate Next Actions
 
-1. Improve Telegram runtime reliability to raise command success from `0.8859` toward >= `0.99`.
-2. Add explicit MTTR measurement/evidence into metrics pipeline.
-3. Add recovery-rate metric for poll/timeout faults and target >=95% over a defined window.
+1. Add explicit MTTR measurement/evidence into metrics pipeline.
+2. Add recovery-rate metric for poll/timeout faults and target >=95% over a defined window.
+3. Re-run 24h window after legacy pre-hardening errors age out and confirm blended production command success >=99%.

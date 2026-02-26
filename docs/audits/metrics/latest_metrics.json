@@ -4,12 +4,12 @@
     "Enforce complete reviewer checklist schema on all heavy-task reviews.",
     "Stabilize Telegram polling loop and restart behavior to reduce poll errors."
   ],
-  "generated_at": "2026-02-26T03:43:26.792675+00:00",
+  "generated_at": "2026-02-26T03:50:04.147898+00:00",
   "iteration": "latest",
   "summary": {
     "approvals": {
       "approval_status_counts": {
-        "approved": 50,
+        "approved": 51,
         "rejected": 1,
         "required": 4
       },
@@ -28,63 +28,66 @@
       "fail_then_pass_count": 5,
       "gate_fail_count": 1,
       "gate_missing_count": 10,
-      "gate_pass_count": 49,
-      "gate_pass_rate": 0.8167,
-      "heavy_task_count": 60,
+      "gate_pass_count": 50,
+      "gate_pass_rate": 0.8197,
+      "heavy_task_count": 61,
       "median_gate_latency_minutes": 0.03,
       "p90_gate_latency_minutes": 0.9,
       "review_reason_counts": {
         "missing_tests": 1
       },
-      "review_schema_complete_count": 47,
-      "review_schema_complete_rate": 0.7833
+      "review_schema_complete_count": 48,
+      "review_schema_complete_rate": 0.7869
     },
     "task_flow": {
       "risk_counts": {
         "high": 3,
-        "low": 35,
-        "medium": 59
+        "low": 38,
+        "medium": 60
       },
       "route_counts": {
-        "PI_LIGHT": 37,
-        "UBUNTU_HEAVY": 60
+        "PI_LIGHT": 40,
+        "UBUNTU_HEAVY": 61
       },
       "status_counts": {
         "blocked": 17,
         "cancelled": 1,
         "failed": 8,
         "running": 5,
-        "succeeded": 66
+        "succeeded": 70
       },
-      "task_count": 97
+      "task_count": 101
     },
     "telegram": {
-      "command_count": 320,
+      "command_count": 372,
       "command_counts": {
-        "/approve": 68,
-        "/board": 8,
-        "/help": 4,
+        "/approve": 70,
+        "/board": 18,
+        "/help": 14,
         "/list": 4,
-        "/newtask": 70,
-        "/ops": 1,
-        "/plan": 39,
-        "/resume": 64,
-        "/review": 43,
+        "/newtask": 76,
+        "/ops": 11,
+        "/plan": 40,
+        "/resume": 66,
+        "/review": 44,
         "/rsume": 1,
-        "/start": 6,
+        "/start": 16,
         "/status": 11,
         "/stop": 1
       },
+      "command_error_rate": 0.0385,
       "command_status_counts": {
         "/approve": {
           "command_timeout": 1,
-          "ok": 67
+          "ok": 69
         },
         "/board": {
-          "ok": 8
+          "ok": 10,
+          "rate_limited": 8
         },
         "/help": {
-          "ok": 4
+          "ok": 7,
+          "rate_limited": 7
         },
         "/list": {
           "ok": 4
@@ -92,29 +95,32 @@
         "/newtask": {
           "error": 5,
           "idempotent_replay": 10,
-          "ok": 55
+          "ok": 59,
+          "rate_limited": 2
         },
         "/ops": {
-          "ok": 1
+          "ok": 3,
+          "rate_limited": 8
         },
         "/plan": {
-          "ok": 39
+          "ok": 40
         },
         "/resume": {
           "command_timeout": 3,
           "error": 1,
-          "ok": 58,
+          "ok": 60,
           "rate_limited": 2
         },
         "/review": {
-          "ok": 43
+          "ok": 44
         },
         "/rsume": {
           "error": 1
         },
         "/start": {
           "error": 1,
-          "ok": 5
+          "ok": 8,
+          "rate_limited": 7
         },
         "/status": {
           "error": 1,
@@ -124,38 +130,46 @@
           "ok": 1
         }
       },
+      "command_success_rate": 0.9615,
       "command_timeout_count": 4,
-      "error_rate": 0.039,
+      "error_rate": 0.0338,
       "poll_error_count": 4,
+      "production_command_count": 97,
+      "production_command_error_rate": 0.0615,
+      "production_command_success_rate": 0.9385,
+      "production_trace_command_count": 45,
+      "production_trace_command_error_rate": 0.0,
+      "production_trace_command_success_rate": 1.0,
       "status_counts": {
         "command_timeout": 4,
         "error": 9,
         "idempotent_replay": 10,
-        "ok": 295,
+        "ok": 315,
         "poll_error": 4,
-        "rate_limited": 2,
+        "rate_limited": 34,
         "startup": 9
       },
-      "success_rate": 0.8859,
+      "success_rate": 0.8182,
+      "synthetic_row_count": 275,
       "unauthorized_count": 0
     },
     "telemetry": {
-      "avg_compression_ratio": 0.6774,
-      "avg_dispatch_duration_ms": 33410.34,
-      "avg_estimated_cost_usd": 0.000739,
-      "avg_estimated_tokens": 134.13,
+      "avg_compression_ratio": 0.6765,
+      "avg_dispatch_duration_ms": 31528.49,
+      "avg_estimated_cost_usd": 0.00071,
+      "avg_estimated_tokens": 136.2,
       "cost_source_counts": {
         "heuristic": 9,
-        "openrouter_api": 57,
+        "openrouter_api": 61,
         "unknown": 31
       },
       "p90_dispatch_duration_ms": 154371.0,
       "total_estimated_cost_usd": 0.07169,
-      "total_estimated_tokens": 13011
+      "total_estimated_tokens": 13756
     }
   },
   "window": {
-    "end": "2026-02-26T03:43:26.780870+00:00",
-    "start": "2026-02-19T03:43:26.780870+00:00"
+    "end": "2026-02-26T03:50:04.132845+00:00",
+    "start": "2026-02-19T03:50:04.132845+00:00"
   }
 }

@@ -165,6 +165,22 @@ def load_telegram_audit(path: Path, window: Window) -> list[dict[str, Any]]:
     return rows
 
 
+def is_synthetic_telegram_row(row: dict[str, Any]) -> bool:
+    actor = str(row.get("actor", ""))
+    if actor.startswith("@smoke") or actor.startswith("@chaos"):
+        return True
+    text = str(row.get("text", "")).lower()
+    if "smoke" in text or "chaos" in text:
+        return True
+    try:
+        update_id = int(row.get("update_id", 0) or 0)
+    except (TypeError, ValueError):
+        update_id = 0
+    if update_id >= 900000000:
+        return True
+    return False
+
+
 def summarize(
     tasks: list[sqlite3.Row],
     policy_events: list[sqlite3.Row],
@@ -307,11 +323,74 @@ def summarize(
     command_counts: dict[str, int] = {}
     command_status_counts: dict[str, dict[str, int]] = {}
     telegram_status_counts: dict[str, int] = {}
+    command_total = 0
+    command_eligible_total = 0
+    command_ok = 0
+    command_error = 0
+    production_command_total = 0
+    production_command_eligible_total = 0
+    production_command_ok = 0
+    production_command_error = 0
+    production_trace_command_total = 0
+    production_trace_command_eligible_total = 0
+    production_trace_command_ok = 0
+    production_trace_command_error = 0
+    synthetic_count = 0
+
     for row in telegram_rows:
         status = str(row.get("status", "unknown"))
         telegram_status_counts[status] = telegram_status_counts.get(status, 0) + 1
         text = str(row.get("text", "")).strip()
+        synthetic = is_synthetic_telegram_row(row)
+        if synthetic:
+            synthetic_count += 1
         if text.startswith("/"):
+            command_total += 1
+            if status in {
+                "ok",
+                "idempotent_replay",
+                "error",
+                "command_timeout",
+                "idempotency_conflict",
+            }:
+                command_eligible_total += 1
+            if status in {"ok", "idempotent_replay"}:
+                command_ok += 1
+            elif status in {"error", "command_timeout", "idempotency_conflict"}:
+                command_error += 1
+
+            trace_id = str(row.get("trace_id", "")).strip()
+            has_trace = bool(trace_id)
+            if not synthetic:
+                production_command_total += 1
+                if status in {
+                    "ok",
+                    "idempotent_replay",
+                    "error",
+                    "command_timeout",
+                    "idempotency_conflict",
+                }:
+                    production_command_eligible_total += 1
+                if status in {"ok", "idempotent_replay"}:
+                    production_command_ok += 1
+                elif status in {"error", "command_timeout", "idempotency_conflict"}:
+                    production_command_error += 1
+
+            if not synthetic and has_trace:
+                production_trace_command_total += 1
+                if status in {
+                    "ok",
+                    "idempotent_replay",
+                    "error",
+                    "command_timeout",
+                    "idempotency_conflict",
+                }:
+                    production_trace_command_eligible_total += 1
+                if status in {"ok", "idempotent_replay"}:
+                    production_trace_command_ok += 1
+                elif status in {"error", "command_timeout", "idempotency_conflict"}:
+                    production_trace_command_error += 1
+
             cmd = text.split()[0].split("@", 1)[0].lower()
             command_counts[cmd] = command_counts.get(cmd, 0) + 1
             cmd_bucket = command_status_counts.setdefault(cmd, {})
@@ -401,6 +480,37 @@ def summarize(
             "error_rate": round((telegram_error + telegram_timeout) / telegram_total, 4)
             if telegram_total
             else 0,
+            "command_success_rate": round(command_ok / command_eligible_total, 4)
+            if command_eligible_total
+            else 0,
+            "command_error_rate": round(command_error / command_eligible_total, 4)
+            if command_eligible_total
+            else 0,
+            "production_command_count": production_command_total,
+            "production_command_success_rate": round(
+                production_command_ok / production_command_eligible_total, 4
+            )
+            if production_command_eligible_total
+            else 0,
+            "production_command_error_rate": round(
+                production_command_error / production_command_eligible_total, 4
+            )
+            if production_command_eligible_total
+            else 0,
+            "production_trace_command_count": production_trace_command_total,
+            "production_trace_command_success_rate": round(
+                production_trace_command_ok / production_trace_command_eligible_total, 4
+            )
+            if production_trace_command_eligible_total
+            else 0,
+            "production_trace_command_error_rate": round(
+                production_trace_command_error
+                / production_trace_command_eligible_total,
+                4,
+            )
+            if production_trace_command_eligible_total
+            else 0,
+            "synthetic_row_count": synthetic_count,
             "unauthorized_count": telegram_status_counts.get("unauthorized", 0),
             "poll_error_count": poll_error_count,
             "command_timeout_count": telegram_timeout,
@@ -427,7 +537,7 @@ def recommendations(summary: dict[str, Any]) -> list[str]:
             "Enforce complete reviewer checklist schema on all heavy-task reviews."
         )
 
-    if float(summary["telegram"]["error_rate"]) > 0.1:
+    if float(summary["telegram"]["production_trace_command_error_rate"]) > 0.1:
         out.append(
             "Reduce Telegram command error rate with stricter input validation/help hints."
         )
@@ -502,8 +612,11 @@ def render_markdown(
     lines.append(
         "- Telegram: "
         f"success_rate={telegram['success_rate']} error_rate={telegram['error_rate']} "
+        f"command_success_rate={telegram['command_success_rate']} "
+        f"production_command_success_rate={telegram['production_command_success_rate']} "
+        f"production_trace_command_success_rate={telegram['production_trace_command_success_rate']} "
         f"unauthorized={telegram['unauthorized_count']} poll_errors={telegram['poll_error_count']} "
-        f"timeouts={telegram['command_timeout_count']}"
+        f"timeouts={telegram['command_timeout_count']} synthetic_rows={telegram['synthetic_row_count']}"
     )
     lines.append("")
 

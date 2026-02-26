@@ -763,9 +763,14 @@ def process_update(
         send_message(config, chat_id, response_text)
     except Exception as exc:
         err = str(exc)
-        audit_payload["status"] = (
-            "command_timeout" if "command_timeout" in err else "error"
-        )
+        lower_err = err.lower()
+        if "command_timeout" in err:
+            status = "command_timeout"
+        elif lower_err.startswith("usage:") or lower_err.startswith("unknown command"):
+            status = "user_error"
+        else:
+            status = "error"
+        audit_payload["status"] = status
         audit_payload["error"] = str(exc)
         append_audit(config.audit_log, audit_payload)
         finalize_idempo({"status": audit_payload["status"], "error": str(exc)})
