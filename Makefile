@@ -40,4 +40,4 @@ smoke-fast:
 	python3 scripts/smoke_fast_control_plane.py --mode full
 
 test-control:
-	python3 tests/test_control_plane_invariants.py && python3 tests/test_dispatch_lease_recovery.py && python3 tests/test_idempotency_paths.py && python3 tests/test_trace_propagation.py
+	python3 tests/test_control_plane_invariants.py && python3 tests/test_dispatch_lease_recovery.py && python3 tests/test_idempotency_paths.py && python3 tests/test_trace_propagation.py && python3 tests/test_ops_summary.py

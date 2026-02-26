@@ -93,6 +93,17 @@ Example:
   - blocked tasks
   - failed tasks (recent)
 
+## /ops
+
+`/ops`
+
+- Returns compact operations health summary for last 24h:
+  - task counts (blocked/running/queued/failed)
+  - lease counts (active/stale)
+  - idempotency replay/conflict counters
+  - timeout counters (command/dispatch)
+  - overall status (`healthy` or `degraded`) with reason list
+
 ## Safety Contract
 
 Any command that triggers high-risk action remains blocked until explicit human approval.

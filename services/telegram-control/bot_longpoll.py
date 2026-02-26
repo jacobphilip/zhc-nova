@@ -363,7 +363,8 @@ def help_text() -> str:
         "/review <task_id> <pass|fail> [reason_code_if_fail] [notes]\n"
         "/resume <task_id>\n"
         "/stop <task_id>\n"
-        "/board"
+        "/board\n"
+        "/ops"
     )
 
 
@@ -620,8 +621,33 @@ def handle_command(
         )
         return msg, {"counts": counts}
 
+    if cmd == "/ops":
+        if args:
+            raise ValueError("Usage: /ops")
+        summary = registry_cmd(
+            config,
+            ["ops-summary", "--hours", "24"],
+            config.command_timeout_seconds,
+        )
+        tasks = summary.get("tasks", {})
+        leases = summary.get("leases", {})
+        idempo = summary.get("idempotency", {})
+        timeouts = summary.get("timeouts", {})
+        status = str(summary.get("status", "unknown"))
+        reasons = summary.get("reasons", [])
+        reason_txt = ", ".join(reasons) if reasons else "none"
+        msg = (
+            "OPS\n"
+            f"tasks: blocked={tasks.get('blocked', 0)} running={tasks.get('running', 0)} queued={tasks.get('queued', 0)} failed_24h={tasks.get('failed_window', 0)}\n"
+            f"leases: active={leases.get('active', 0)} stale={leases.get('stale', 0)}\n"
+            f"idempotency(24h): replay={idempo.get('replay_window', 0)} conflict={idempo.get('conflict_window', 0)}\n"
+            f"timeouts(24h): command={timeouts.get('command_window', 0)} dispatch={timeouts.get('dispatch_window', 0)}\n"
+            f"status: {status} ({reason_txt})"
+        )
+        return msg, summary
+
     raise ValueError(
-        "Unknown command. Use /newtask, /status, /list, /approve, /plan, /review, /resume, /stop, /board"
+        "Unknown command. Use /newtask, /status, /list, /approve, /plan, /review, /resume, /stop, /board, /ops"
     )
 
 

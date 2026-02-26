@@ -40,6 +40,9 @@ python3 services/task-router/router.py resume --task-id <task_id> --requested-by
 # List tasks
 python3 shared/task-registry/task_registry.py list --limit 20
 
+# Compact ops health summary (last 24h)
+python3 shared/task-registry/task_registry.py --json ops-summary --hours 24
+
 # Telemetry summary (cost/latency estimates)
 python3 shared/task-registry/task_registry.py --json telemetry --limit 20
 

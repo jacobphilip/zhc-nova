@@ -887,6 +887,165 @@ def trace_events(db_path: Path, trace_id: str, limit: int = 500) -> dict[str, An
     return {"trace_id": trace_id, "limit": limit, "events": events}
 
 
+def summarize_telegram_audit(window_start: datetime) -> dict[str, int]:
+    storage_root = Path(os.getenv("ZHC_STORAGE_ROOT", "storage")).resolve()
+    audit_path = storage_root / "memory" / "telegram_command_audit.jsonl"
+    counts = {
+        "idempotent_replay": 0,
+        "idempotency_conflict": 0,
+        "command_timeout": 0,
+    }
+    if not audit_path.exists():
+        return counts
+
+    for raw in audit_path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip():
+            continue
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        ts = parse_ts(str(payload.get("ts", "")))
+        if not ts or ts < window_start:
+            continue
+        status = str(payload.get("status", "")).strip().lower()
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def ops_summary(db_path: Path, hours: int = 24) -> dict[str, Any]:
+    window_hours = max(1, int(hours))
+    now_dt = utc_now_dt()
+    window_start = now_dt - timedelta(hours=window_hours)
+    now_iso = now_dt.isoformat()
+    window_start_iso = window_start.isoformat()
+
+    with connect(db_path) as conn:
+        task_counts_rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS cnt
+            FROM tasks
+            GROUP BY status
+            """
+        ).fetchall()
+        task_counts = {str(row["status"]): int(row["cnt"]) for row in task_counts_rows}
+
+        failed_window = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM tasks
+            WHERE status = 'failed' AND updated_at >= ?
+            """,
+            (window_start_iso,),
+        ).fetchone()
+
+        active_lease = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM task_dispatch_lease
+            WHERE lease_status IN ('queued', 'running')
+            """
+        ).fetchone()
+
+        stale_lease = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM task_dispatch_lease
+            WHERE lease_status IN ('queued', 'running')
+              AND lease_expires_at < ?
+            """,
+            (now_iso,),
+        ).fetchone()
+
+        idempo_conflict = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM idempotency_keys
+            WHERE status = 'conflict' AND updated_at >= ?
+            """,
+            (window_start_iso,),
+        ).fetchone()
+
+        idempo_dispatch = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM idempotency_keys
+            WHERE scope = 'dispatch' AND created_at >= ?
+            """,
+            (window_start_iso,),
+        ).fetchone()
+
+        idempo_telegram = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM idempotency_keys
+            WHERE scope = 'telegram_command' AND created_at >= ?
+            """,
+            (window_start_iso,),
+        ).fetchone()
+
+        dispatch_timeout = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM task_events
+            WHERE created_at >= ? AND detail LIKE '%dispatch_timeout%'
+            """,
+            (window_start_iso,),
+        ).fetchone()
+
+    audit_counts = summarize_telegram_audit(window_start)
+
+    tasks_blocked = int(task_counts.get("blocked", 0))
+    tasks_running = int(task_counts.get("running", 0))
+    tasks_queued = int(task_counts.get("queued", 0))
+    failed_window_count = int((failed_window or {"cnt": 0})["cnt"])
+    active_lease_count = int((active_lease or {"cnt": 0})["cnt"])
+    stale_lease_count = int((stale_lease or {"cnt": 0})["cnt"])
+    conflict_window_count = int((idempo_conflict or {"cnt": 0})["cnt"])
+    dispatch_keys_window = int((idempo_dispatch or {"cnt": 0})["cnt"])
+    telegram_keys_window = int((idempo_telegram or {"cnt": 0})["cnt"])
+    dispatch_timeout_window = int((dispatch_timeout or {"cnt": 0})["cnt"])
+
+    reasons: list[str] = []
+    if stale_lease_count > 0:
+        reasons.append("stale_lease_present")
+    if conflict_window_count > 0:
+        reasons.append("idempotency_conflicts_detected")
+    if dispatch_timeout_window > 0:
+        reasons.append("dispatch_timeouts_detected")
+    if audit_counts["command_timeout"] > 0:
+        reasons.append("command_timeouts_detected")
+
+    return {
+        "window_hours": window_hours,
+        "window_start": window_start_iso,
+        "tasks": {
+            "blocked": tasks_blocked,
+            "running": tasks_running,
+            "queued": tasks_queued,
+            "failed_window": failed_window_count,
+        },
+        "leases": {
+            "active": active_lease_count,
+            "stale": stale_lease_count,
+        },
+        "idempotency": {
+            "replay_window": audit_counts["idempotent_replay"],
+            "conflict_window": conflict_window_count,
+            "dispatch_keys_window": dispatch_keys_window,
+            "telegram_keys_window": telegram_keys_window,
+            "telegram_conflict_window": audit_counts["idempotency_conflict"],
+        },
+        "timeouts": {
+            "command_window": audit_counts["command_timeout"],
+            "dispatch_window": dispatch_timeout_window,
+        },
+        "status": "degraded" if reasons else "healthy",
+        "reasons": reasons,
+    }
+
+
 def list_tasks(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -1190,6 +1349,9 @@ def parse_args() -> argparse.Namespace:
     p_trace_events.add_argument("--trace-id", required=True)
     p_trace_events.add_argument("--limit", type=int, default=500)
 
+    p_ops_summary = sub.add_parser("ops-summary", help="Compact operations summary")
+    p_ops_summary.add_argument("--hours", type=int, default=24)
+
     return parser.parse_args()
 
 
@@ -1396,6 +1558,11 @@ def main() -> int:
 
         if args.command == "trace-events":
             result = trace_events(db_path, args.trace_id, args.limit)
+            print_out(result, args.json)
+            return 0
+
+        if args.command == "ops-summary":
+            result = ops_summary(db_path, args.hours)
             print_out(result, args.json)
             return 0
 

@@ -15,6 +15,7 @@ Source of truth for service command behavior: `services/telegram-control/command
 - `/resume <task_id>`
 - `/stop <task_id>`
 - `/board`
+- `/ops`
 
 ## Notes
 
