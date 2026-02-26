@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast test-control
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast test-control chaos-lite
 
 init-dev:
 	./scripts/init_dev.sh
@@ -41,3 +41,6 @@ smoke-fast:
 
 test-control:
 	python3 tests/test_control_plane_invariants.py && python3 tests/test_dispatch_lease_recovery.py && python3 tests/test_idempotency_paths.py && python3 tests/test_trace_propagation.py && python3 tests/test_ops_summary.py
+
+chaos-lite:
+	python3 scripts/chaos_lite.py --output storage/memory/chaos_lite_latest.json

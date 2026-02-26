@@ -132,6 +132,7 @@ This is the execution board for the next hardening sprint.
   - no duplicate heavy execution
 - Suggested files:
   - `scripts/*`
+  - `scripts/chaos_lite.py`
   - `docs/TELEGRAM_SMOKETEST.md`
   - `docs/OPERATIONS.md`
 

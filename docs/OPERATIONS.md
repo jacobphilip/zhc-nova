@@ -49,6 +49,9 @@ python3 shared/task-registry/task_registry.py --json telemetry --limit 20
 # Closed-loop metrics report
 python3 scripts/metrics_report.py --days 7 --iteration latest --output-json docs/audits/metrics/latest_metrics.json --output-md docs/audits/metrics/latest_metrics.md
 
+# Chaos-lite reliability suite (CP-008)
+python3 scripts/chaos_lite.py --output storage/memory/chaos_lite_latest.json
+
 # Get task
 python3 shared/task-registry/task_registry.py get --task-id <task_id>
 
@@ -203,6 +206,17 @@ python3 scripts/smoke_fast_control_plane.py --mode full --json --output storage/
 ```bash
 python3 scripts/smoke_fast_control_plane.py --mode full --real-exec --json
 ```
+
+## Chaos-Lite Reliability Suite
+
+- Run CP-008 scenarios:
+
+```bash
+make chaos-lite
+```
+
+- Report output: `storage/memory/chaos_lite_latest.json`
+- Pass condition: report contains `"ok": true` and no failed scenarios.
 
 ## Ubuntu Single-Node Alive Checklist
 

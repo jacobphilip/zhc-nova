@@ -81,6 +81,7 @@ python3 services/task-router/router.py route \
 - Smoke-test checklist: `docs/TELEGRAM_SMOKETEST.md`
 - Fast validation gate: `make smoke-fast`
 - Control invariant tests: `make test-control`
+- Chaos-lite reliability suite: `make chaos-lite`
 - Command semantics + reliability controls: `docs/TELEGRAM_COMMANDS.md`
 - Live health summary command: `/ops`
 
