@@ -780,6 +780,7 @@ def process_update(
 def poll_loop(config: Config) -> None:
     offset = read_offset(config.offset_file)
     error_count = 0
+    had_poll_error = False
     backoff_seconds = max(config.poll_interval_seconds, 0.2)
     rate_buckets: dict[int, list[float]] = {}
     while True:
@@ -798,10 +799,21 @@ def poll_loop(config: Config) -> None:
                 process_update(config, update, rate_buckets)
                 offset = int(update.get("update_id", offset)) + 1
                 write_offset(config.offset_file, offset)
+            if had_poll_error:
+                append_audit(
+                    config.audit_log,
+                    {
+                        "ts": utc_now(),
+                        "status": "poll_recovered",
+                        "error_count": error_count,
+                    },
+                )
             error_count = 0
+            had_poll_error = False
             backoff_seconds = max(config.poll_interval_seconds, 0.2)
         except Exception as exc:
             error_count += 1
+            had_poll_error = True
             append_audit(
                 config.audit_log,
                 {

@@ -339,24 +339,33 @@ def summarize(
     recovery_window_minutes = 10
 
     timeout_events: list[datetime] = []
+    timeout_events_instrumented: list[datetime] = []
     poll_error_events: list[datetime] = []
-    ok_events: list[datetime] = []
+    poll_recovered_events: list[datetime] = []
+    command_progress_events: list[datetime] = []
 
     for row in telegram_rows:
         status = str(row.get("status", "unknown"))
         telegram_status_counts[status] = telegram_status_counts.get(status, 0) + 1
         ts = parse_ts(str(row.get("ts", "")))
-        if ts:
-            if status == "ok":
-                ok_events.append(ts)
-            elif status == "command_timeout":
-                timeout_events.append(ts)
-            elif status == "poll_error":
-                poll_error_events.append(ts)
         text = str(row.get("text", "")).strip()
         synthetic = is_synthetic_telegram_row(row)
         if synthetic:
             synthetic_count += 1
+        if ts and not synthetic:
+            if status == "command_timeout":
+                timeout_events.append(ts)
+            elif status == "poll_error":
+                poll_error_events.append(ts)
+            elif status == "poll_recovered":
+                poll_recovered_events.append(ts)
+            elif text.startswith("/") and status in {
+                "ok",
+                "idempotent_replay",
+                "user_error",
+                "error",
+            }:
+                command_progress_events.append(ts)
         if text.startswith("/"):
             command_total += 1
             if status in {
@@ -374,6 +383,8 @@ def summarize(
 
             trace_id = str(row.get("trace_id", "")).strip()
             has_trace = bool(trace_id)
+            if not synthetic and has_trace and status == "command_timeout" and ts:
+                timeout_events_instrumented.append(ts)
             if not synthetic:
                 production_command_total += 1
                 if status in {
@@ -414,32 +425,99 @@ def summarize(
     telegram_timeout = telegram_status_counts.get("command_timeout", 0)
     poll_error_count = telegram_status_counts.get("poll_error", 0)
     telegram_ok = telegram_status_counts.get("ok", 0)
-    ok_events.sort()
 
-    def incident_recovery(incidents: list[datetime]) -> tuple[int, int, list[float]]:
+    command_progress_events.sort()
+    poll_recovered_events.sort()
+
+    def incident_recovery(
+        incidents: list[datetime],
+        recovery_events: list[datetime],
+        min_incident_ts: datetime | None = None,
+    ) -> tuple[int, int, list[float]]:
         recovered = 0
         latencies: list[float] = []
-        for incident_ts in incidents:
+        scoped_incidents = incidents
+        if min_incident_ts is not None:
+            scoped_incidents = [ts for ts in incidents if ts >= min_incident_ts]
+        for incident_ts in scoped_incidents:
             recovery_ts: datetime | None = None
-            for ok_ts in ok_events:
-                if ok_ts > incident_ts:
-                    delta_m = (ok_ts - incident_ts).total_seconds() / 60.0
+            for event_ts in recovery_events:
+                if event_ts > incident_ts:
+                    delta_m = (event_ts - incident_ts).total_seconds() / 60.0
                     if delta_m <= recovery_window_minutes:
-                        recovery_ts = ok_ts
+                        recovery_ts = event_ts
                     break
             if recovery_ts is not None:
                 recovered += 1
                 latencies.append((recovery_ts - incident_ts).total_seconds() / 60.0)
-        return len(incidents), recovered, latencies
+        return len(scoped_incidents), recovered, latencies
 
     timeout_total, timeout_recovered, timeout_latencies = incident_recovery(
-        timeout_events
+        timeout_events,
+        command_progress_events,
     )
-    poll_total, poll_recovered, poll_latencies = incident_recovery(poll_error_events)
+    poll_recovery_candidates = (
+        poll_recovered_events if poll_recovered_events else command_progress_events
+    )
+    poll_total, poll_recovered, poll_latencies = incident_recovery(
+        poll_error_events,
+        poll_recovery_candidates,
+    )
 
     all_recovery_latencies = timeout_latencies + poll_latencies
     total_incidents = timeout_total + poll_total
     recovered_incidents = timeout_recovered + poll_recovered
+
+    recent_cutoff: datetime | None = None
+    if telegram_rows:
+        ts_values: list[datetime] = []
+        for row in telegram_rows:
+            ts_val = parse_ts(str(row.get("ts", "")))
+            if ts_val:
+                ts_values.append(ts_val)
+        if ts_values:
+            recent_cutoff = max(ts_values) - timedelta(hours=24)
+
+    timeout_total_24h, timeout_recovered_24h, _ = incident_recovery(
+        timeout_events,
+        command_progress_events,
+        recent_cutoff,
+    )
+    poll_total_24h, poll_recovered_24h, _ = incident_recovery(
+        poll_error_events,
+        poll_recovery_candidates,
+        recent_cutoff,
+    )
+    total_incidents_24h = timeout_total_24h + poll_total_24h
+    recovered_incidents_24h = timeout_recovered_24h + poll_recovered_24h
+    recovery_rate_24h = (
+        round(recovered_incidents_24h / total_incidents_24h, 4)
+        if total_incidents_24h
+        else 1.0
+    )
+
+    poll_error_events_instrumented: list[datetime] = []
+    if poll_recovered_events:
+        poll_instrumented_start = min(poll_recovered_events)
+        poll_error_events_instrumented = [
+            ts for ts in poll_error_events if ts >= poll_instrumented_start
+        ]
+
+    timeout_total_instr, timeout_recovered_instr, _ = incident_recovery(
+        timeout_events_instrumented,
+        command_progress_events,
+    )
+    poll_total_instr, poll_recovered_instr, _ = incident_recovery(
+        poll_error_events_instrumented,
+        poll_recovered_events,
+    )
+    total_incidents_instr = timeout_total_instr + poll_total_instr
+    recovered_incidents_instr = timeout_recovered_instr + poll_recovered_instr
+    recovery_rate_instr = (
+        round(recovered_incidents_instr / total_incidents_instr, 4)
+        if total_incidents_instr
+        else 1.0
+    )
 
     mttr_minutes = (
         round(sum(all_recovery_latencies) / len(all_recovery_latencies), 2)
@@ -578,6 +656,16 @@ def summarize(
                 "timeouts_recovered": timeout_recovered,
                 "poll_errors_total": poll_total,
                 "poll_errors_recovered": poll_recovered,
+                "poll_recovered_event_count": telegram_status_counts.get(
+                    "poll_recovered", 0
+                ),
+                "recent_window_hours": 24,
+                "recent_total_incidents": total_incidents_24h,
+                "recent_recovered_incidents": recovered_incidents_24h,
+                "recent_recovery_rate": recovery_rate_24h,
+                "instrumented_total_incidents": total_incidents_instr,
+                "instrumented_recovered_incidents": recovered_incidents_instr,
+                "instrumented_recovery_rate": recovery_rate_instr,
             },
         },
     }
@@ -612,7 +700,9 @@ def recommendations(summary: dict[str, Any]) -> list[str]:
             "Stabilize Telegram polling loop and restart behavior to reduce poll errors."
         )
 
-    recovery_rate = float(summary["telegram"]["incident_recovery"]["recovery_rate"])
+    recovery_rate = float(
+        summary["telegram"]["incident_recovery"]["instrumented_recovery_rate"]
+    )
     if recovery_rate < 0.95:
         out.append(
             "Improve timeout/poll recovery automation to reach >=95% recovery rate."
@@ -694,7 +784,9 @@ def render_markdown(
         "- Recovery: "
         f"rate={recovery['recovery_rate']} mttr_minutes={recovery['mttr_minutes']} "
         f"p90_recovery_minutes={recovery['p90_recovery_minutes']} "
-        f"incidents={recovery['total_incidents']}"
+        f"incidents={recovery['total_incidents']} "
+        f"recent_24h_rate={recovery['recent_recovery_rate']} "
+        f"instrumented_rate={recovery['instrumented_recovery_rate']}"
     )
     lines.append("")
 

@@ -2,10 +2,9 @@
   "actions": [
     "Tune execution policy allowlists/keywords to reduce unnecessary policy blocks.",
     "Enforce complete reviewer checklist schema on all heavy-task reviews.",
-    "Stabilize Telegram polling loop and restart behavior to reduce poll errors.",
-    "Improve timeout/poll recovery automation to reach >=95% recovery rate."
+    "Stabilize Telegram polling loop and restart behavior to reduce poll errors."
   ],
-  "generated_at": "2026-02-26T04:00:43.197290+00:00",
+  "generated_at": "2026-02-26T04:07:38.129656+00:00",
   "iteration": "latest",
   "summary": {
     "approvals": {
@@ -135,15 +134,23 @@
       "command_timeout_count": 4,
       "error_rate": 0.0338,
       "incident_recovery": {
-        "mttr_minutes": 2.07,
-        "p90_recovery_minutes": 3.01,
-        "poll_errors_recovered": 1,
+        "instrumented_recovered_incidents": 0,
+        "instrumented_recovery_rate": 1.0,
+        "instrumented_total_incidents": 0,
+        "mttr_minutes": 1.07,
+        "p90_recovery_minutes": 1.07,
+        "poll_errors_recovered": 0,
         "poll_errors_total": 4,
-        "recovered_incidents": 5,
-        "recovery_rate": 0.625,
-        "timeouts_recovered": 4,
-        "timeouts_total": 4,
-        "total_incidents": 8,
+        "poll_recovered_event_count": 0,
+        "recent_recovered_incidents": 1,
+        "recent_recovery_rate": 0.2,
+        "recent_total_incidents": 5,
+        "recent_window_hours": 24,
+        "recovered_incidents": 1,
+        "recovery_rate": 0.2,
+        "timeouts_recovered": 1,
+        "timeouts_total": 1,
+        "total_incidents": 5,
         "window_minutes": 10
       },
       "poll_error_count": 4,
@@ -182,7 +189,7 @@
     }
   },
   "window": {
-    "end": "2026-02-26T04:00:43.182264+00:00",
-    "start": "2026-02-19T04:00:43.182264+00:00"
+    "end": "2026-02-26T04:07:38.110472+00:00",
+    "start": "2026-02-19T04:07:38.110472+00:00"
   }
 }
