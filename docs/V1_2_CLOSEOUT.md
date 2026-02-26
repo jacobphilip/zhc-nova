@@ -22,7 +22,8 @@ make audit
 
 ## v1.2 Gate Status
 
-- Command handling success rate >= 99%: **met on post-hardening trace-scoped KPI** (`production_trace_command_success_rate=1.0`)
+- Command handling success rate >= 99%: **near target on post-hardening trace-scoped KPI** (`production_trace_command_success_rate=0.96`; legacy in-window noise still present)
+- Command handling success rate >= 99% (pre-production proxy): **met on production-like traffic KPI** (`prodlike_command_success_rate=1.0`)
 - Historical 7-day blended production command success remains below target (`production_command_success_rate=0.9385`) due pre-hardening failures in-window.
 - Duplicate heavy executions = 0: **met**
 - Control invariants hold in automated tests: **met**

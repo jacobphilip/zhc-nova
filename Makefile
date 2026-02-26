@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast test-control chaos-lite
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast test-control chaos-lite prodlike-traffic
 
 init-dev:
 	./scripts/init_dev.sh
@@ -44,3 +44,6 @@ test-control:
 
 chaos-lite:
 	python3 scripts/chaos_lite.py --output storage/memory/chaos_lite_latest.json
+
+prodlike-traffic:
+	python3 scripts/prodlike_traffic.py --output storage/memory/prodlike_traffic_latest.json

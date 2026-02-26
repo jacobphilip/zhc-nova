@@ -671,6 +671,7 @@ def process_update(
         "chat_id": chat_id,
         "actor": actor,
         "text": text,
+        "traffic_class": str(update.get("traffic_class", "real_operator")),
     }
 
     idempo_key = f"tg_update:{update_id}" if update_id > 0 else ""

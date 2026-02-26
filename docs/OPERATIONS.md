@@ -52,6 +52,9 @@ python3 scripts/metrics_report.py --days 7 --iteration latest --output-json docs
 # Chaos-lite reliability suite (CP-008)
 python3 scripts/chaos_lite.py --output storage/memory/chaos_lite_latest.json
 
+# Production-like traffic generator (for pre-production KPI windows)
+python3 scripts/prodlike_traffic.py --output storage/memory/prodlike_traffic_latest.json
+
 # Get task
 python3 shared/task-registry/task_registry.py get --task-id <task_id>
 
@@ -217,6 +220,17 @@ make chaos-lite
 
 - Report output: `storage/memory/chaos_lite_latest.json`
 - Pass condition: report contains `"ok": true` and no failed scenarios.
+
+## Production-Like Traffic Window
+
+- Generate realistic operator-like command flow when no real operator traffic exists yet:
+
+```bash
+make prodlike-traffic
+```
+
+- Report output: `storage/memory/prodlike_traffic_latest.json`
+- Audit rows are tagged `traffic_class=synthetic_prodlike`.
 
 ## Ubuntu Single-Node Alive Checklist
 

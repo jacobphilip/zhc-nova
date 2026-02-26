@@ -166,6 +166,11 @@ def load_telegram_audit(path: Path, window: Window) -> list[dict[str, Any]]:
 
 
 def is_synthetic_telegram_row(row: dict[str, Any]) -> bool:
+    cls = str(row.get("traffic_class", "")).strip().lower()
+    if cls in {"synthetic_test", "synthetic_prodlike"}:
+        return True
+    if cls == "real_operator":
+        return False
     actor = str(row.get("actor", ""))
     if actor.startswith("@smoke") or actor.startswith("@chaos"):
         return True
@@ -179,6 +184,13 @@ def is_synthetic_telegram_row(row: dict[str, Any]) -> bool:
     if update_id >= 900000000:
         return True
     return False
+
+
+def traffic_class(row: dict[str, Any]) -> str:
+    cls = str(row.get("traffic_class", "")).strip().lower()
+    if cls in {"synthetic_test", "synthetic_prodlike", "real_operator"}:
+        return cls
+    return "synthetic_test" if is_synthetic_telegram_row(row) else "real_operator"
 
 
 def summarize(
@@ -335,6 +347,10 @@ def summarize(
     production_trace_command_eligible_total = 0
     production_trace_command_ok = 0
     production_trace_command_error = 0
+    prodlike_command_total = 0
+    prodlike_command_eligible_total = 0
+    prodlike_command_ok = 0
+    prodlike_command_error = 0
     synthetic_count = 0
     recovery_window_minutes = 10
 
@@ -349,7 +365,8 @@ def summarize(
         telegram_status_counts[status] = telegram_status_counts.get(status, 0) + 1
         ts = parse_ts(str(row.get("ts", "")))
         text = str(row.get("text", "")).strip()
-        synthetic = is_synthetic_telegram_row(row)
+        cls = traffic_class(row)
+        synthetic = cls != "real_operator"
         if synthetic:
             synthetic_count += 1
         if ts and not synthetic:
@@ -383,6 +400,20 @@ def summarize(
 
             trace_id = str(row.get("trace_id", "")).strip()
             has_trace = bool(trace_id)
+            if cls == "synthetic_prodlike":
+                prodlike_command_total += 1
+                if status in {
+                    "ok",
+                    "idempotent_replay",
+                    "error",
+                    "command_timeout",
+                    "idempotency_conflict",
+                }:
+                    prodlike_command_eligible_total += 1
+                if status in {"ok", "idempotent_replay"}:
+                    prodlike_command_ok += 1
+                elif status in {"error", "command_timeout", "idempotency_conflict"}:
+                    prodlike_command_error += 1
             if not synthetic and has_trace and status == "command_timeout" and ts:
                 timeout_events_instrumented.append(ts)
             if not synthetic:
@@ -641,6 +672,17 @@ def summarize(
             )
             if production_trace_command_eligible_total
             else 0,
+            "prodlike_command_count": prodlike_command_total,
+            "prodlike_command_success_rate": round(
+                prodlike_command_ok / prodlike_command_eligible_total, 4
+            )
+            if prodlike_command_eligible_total
+            else 0,
+            "prodlike_command_error_rate": round(
+                prodlike_command_error / prodlike_command_eligible_total, 4
+            )
+            if prodlike_command_eligible_total
+            else 0,
             "synthetic_row_count": synthetic_count,
             "unauthorized_count": telegram_status_counts.get("unauthorized", 0),
             "poll_error_count": poll_error_count,
@@ -693,6 +735,15 @@ def recommendations(summary: dict[str, Any]) -> list[str]:
     if float(summary["telegram"]["production_trace_command_error_rate"]) > 0.1:
         out.append(
             "Reduce Telegram command error rate with stricter input validation/help hints."
+        )
+
+    prodlike_success = float(
+        summary["telegram"].get("prodlike_command_success_rate", 0)
+    )
+    prodlike_count = int(summary["telegram"].get("prodlike_command_count", 0))
+    if prodlike_count > 0 and prodlike_success < 0.99:
+        out.append(
+            "Raise production-like command success rate to >=99% before final closeout."
         )
 
     if int(summary["telegram"]["poll_error_count"]) > 0:
@@ -774,6 +825,7 @@ def render_markdown(
         "- Telegram: "
         f"success_rate={telegram['success_rate']} error_rate={telegram['error_rate']} "
         f"command_success_rate={telegram['command_success_rate']} "
+        f"prodlike_command_success_rate={telegram['prodlike_command_success_rate']} "
         f"production_command_success_rate={telegram['production_command_success_rate']} "
         f"production_trace_command_success_rate={telegram['production_trace_command_success_rate']} "
         f"unauthorized={telegram['unauthorized_count']} poll_errors={telegram['poll_error_count']} "

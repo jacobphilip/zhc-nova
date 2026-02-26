@@ -82,6 +82,7 @@ python3 services/task-router/router.py route \
 - Fast validation gate: `make smoke-fast`
 - Control invariant tests: `make test-control`
 - Chaos-lite reliability suite: `make chaos-lite`
+- Production-like traffic window: `make prodlike-traffic`
 - Command semantics + reliability controls: `docs/TELEGRAM_COMMANDS.md`
 - Live health summary command: `/ops`
 
