@@ -109,6 +109,42 @@ class ControlPlaneInvariantTests(unittest.TestCase):
         self.assertEqual(result["status"], "succeeded")
         self.assertIn("already terminal", result["message"])
 
+    def test_browser_pilot_is_approval_gated(self) -> None:
+        approval_policy = self.router["load_policy"](
+            ROOT / "shared/policies/approvals.yaml"
+        )
+        required = self.router["requires_approval"](
+            "medium", "browser_pilot", approval_policy
+        )
+        action = self.router["action_category_for_task"]("browser_pilot", "medium")
+        self.assertTrue(required)
+        self.assertEqual(action, "browser_sensitive")
+
+    def test_browser_pilot_dispatch_mode_constraints(self) -> None:
+        blocked_status, blocked_detail = self.router["dispatch"](
+            "UBUNTU_HEAVY",
+            "browser_pilot",
+            "open dashboard and collect snapshot",
+            "task-browser-pilot-blocked",
+            "auto",
+            "multi_node",
+            self.db,
+        )
+        self.assertEqual(blocked_status, "blocked")
+        self.assertIn("single_node_only", blocked_detail)
+
+        ok_status, ok_detail = self.router["dispatch"](
+            "UBUNTU_HEAVY",
+            "browser_pilot",
+            "open dashboard and collect snapshot",
+            "task-browser-pilot-single-node",
+            "auto",
+            "single_node",
+            self.db,
+        )
+        self.assertEqual(ok_status, "succeeded")
+        self.assertIn("browser_pilot_run", ok_detail)
+
 
 if __name__ == "__main__":
     unittest.main()

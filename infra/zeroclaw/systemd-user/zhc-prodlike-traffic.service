@@ -1,0 +1,10 @@
+[Unit]
+Description=ZHC-Nova Production-Like Traffic Generator (user)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/zhc-nova
+EnvironmentFile=%h/zhc-nova/.env
+ExecStart=/usr/bin/env python3 %h/zhc-nova/scripts/prodlike_traffic.py --cycles 4 --sleep-seconds 0.1 --heavy-every 4 --output %h/zhc-nova/storage/memory/prodlike_traffic_latest.json

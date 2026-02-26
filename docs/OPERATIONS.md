@@ -55,6 +55,12 @@ python3 scripts/chaos_lite.py --output storage/memory/chaos_lite_latest.json
 # Production-like traffic generator (for pre-production KPI windows)
 python3 scripts/prodlike_traffic.py --output storage/memory/prodlike_traffic_latest.json
 
+# Install recurring prodlike traffic timer (systemd --user)
+./scripts/install_prodlike_timer.sh
+
+# Rollback drill (HEAD~1 smoke validation in temporary worktree)
+./scripts/rollback_drill.sh
+
 # Get task
 python3 shared/task-registry/task_registry.py get --task-id <task_id>
 
@@ -231,6 +237,38 @@ make prodlike-traffic
 
 - Report output: `storage/memory/prodlike_traffic_latest.json`
 - Audit rows are tagged `traffic_class=synthetic_prodlike`.
+
+Recurring timer install:
+
+```bash
+make prodlike-timer-install
+systemctl --user list-timers --all | grep zhc-prodlike-traffic
+```
+
+## Rollback Drill (CP-009)
+
+- Validate rollback readiness by running smoke in an isolated `HEAD~1` worktree.
+
+```bash
+make rollback-drill
+```
+
+- Report output: `storage/memory/rollback_drill_latest.json`
+- Pass condition: `rollback_validation_ok=true` and `smoke_exit_code=0`.
+
+## Browser Pilot (Safe Wrapper)
+
+- `browser_pilot` is routed as `UBUNTU_HEAVY` and approval-gated via `browser_sensitive`.
+- Runtime is single-node only; multi-node dispatch is blocked.
+- Wrapper path: `infra/browser/wrappers/zbrowser_safe.sh`
+- Default behavior is safe stub mode, even if `agent-browser` exists.
+
+Enable real browser pilot execution only when intentionally testing:
+
+```bash
+export ZHC_ENABLE_BROWSER_PILOT=1
+export ZHC_BROWSER_ALLOWED_DOMAINS=example.com
+```
 
 ## Ubuntu Single-Node Alive Checklist
 

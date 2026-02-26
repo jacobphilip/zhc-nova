@@ -1,0 +1,11 @@
+[Unit]
+Description=Run ZHC prodlike traffic every 15 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+Persistent=true
+Unit=zhc-prodlike-traffic.service
+
+[Install]
+WantedBy=timers.target

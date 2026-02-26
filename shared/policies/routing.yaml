@@ -10,6 +10,7 @@
     "code_refactor": {"route_class": "UBUNTU_HEAVY", "risk_level": "medium"},
     "code_review": {"route_class": "UBUNTU_HEAVY", "risk_level": "low"},
     "build_fix": {"route_class": "UBUNTU_HEAVY", "risk_level": "medium"},
+    "browser_pilot": {"route_class": "UBUNTU_HEAVY", "risk_level": "medium"},
     "deploy": {"route_class": "UBUNTU_HEAVY", "risk_level": "high"},
     "ping": {"route_class": "PI_LIGHT", "risk_level": "low"}
   },

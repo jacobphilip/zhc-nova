@@ -1,4 +1,4 @@
-.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast test-control chaos-lite prodlike-traffic
+.PHONY: init-dev init-pi db-init healthcheck demo-heavy demo-light list audit metrics telegram zeroclaw-preflight user-services smoke-fast test-control chaos-lite prodlike-traffic prodlike-timer-install rollback-drill
 
 init-dev:
 	./scripts/init_dev.sh
@@ -36,6 +36,9 @@ zeroclaw-preflight:
 user-services:
 	./scripts/install_user_services.sh
 
+prodlike-timer-install:
+	./scripts/install_prodlike_timer.sh
+
 smoke-fast:
 	python3 scripts/smoke_fast_control_plane.py --mode full
 
@@ -47,3 +50,6 @@ chaos-lite:
 
 prodlike-traffic:
 	python3 scripts/prodlike_traffic.py --output storage/memory/prodlike_traffic_latest.json
+
+rollback-drill:
+	./scripts/rollback_drill.sh

@@ -8,6 +8,7 @@ Generated after running the full gate bundle on 2026-02-26.
 make test-control
 make smoke-fast
 make chaos-lite
+make rollback-drill
 make metrics
 make audit
 ```
@@ -17,6 +18,7 @@ make audit
 - `make test-control`: pass
 - `make smoke-fast`: pass (`ok: true`, duplicate execution not detected)
 - `make chaos-lite`: pass (`ok: true`, all 4 scenarios passed)
+- `make rollback-drill`: pass (`rollback_validation_ok: true`, `smoke_exit_code: 0`)
 - Metrics refreshed: `docs/audits/metrics/latest_metrics.json`, `docs/audits/metrics/latest_metrics.md`
 - Audit report refreshed: `docs/audits/latest_report.md`
 
@@ -30,11 +32,12 @@ make audit
 - Poll timeout recovery >= 95%: **met on instrumented KPI** (`instrumented_recovery_rate=1.0`); historical blended recovery remains lower due pre-instrumentation incidents.
 - MTTR <= 10 minutes: **met** (`mttr_minutes=1.07`, `p90_recovery_minutes=1.07`)
 - End-to-end traceability exists for sampled tasks: **met** (`trace-events` + structured router events)
+- Rollback drill evidence captured: **met** (`storage/memory/rollback_drill_latest.json`)
 
 Overall gate outcome: **pass on instrumented v1.2 reliability KPIs**, with historical blended-window lag still visible in legacy metrics.
 
 ## Immediate Next Actions
 
-1. Re-run a clean 24h validation window and confirm sustained blended recovery >=95%.
-2. Re-run 24h window after legacy pre-hardening errors age out and confirm blended production command success >=99%.
-3. Keep instrumented KPIs as primary gate signal; keep blended metrics as trend/operational lag signal.
+1. Keep the `zhc-prodlike-traffic.timer` running to maintain a continuous pre-production KPI baseline.
+2. Re-run a clean 24h validation window and confirm sustained blended recovery >=95%.
+3. Re-run 24h window after legacy pre-hardening errors age out and confirm blended production command success >=99%.

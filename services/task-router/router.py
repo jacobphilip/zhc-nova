@@ -108,6 +108,7 @@ def requires_approval(
         "scheduler_change": "scheduler_change",
         "compliance_finalize": "compliance_finalize",
         "customer_outbound": "customer_outbound",
+        "browser_pilot": "browser_sensitive",
     }
     gate_name = gate_by_task_type.get(task_type.lower())
     if not gate_name:
@@ -123,6 +124,7 @@ def action_category_for_task(task_type: str, risk_level: str) -> str:
         "scheduler_change": "scheduler_change",
         "compliance_finalize": "compliance_finalize",
         "customer_outbound": "customer_outbound",
+        "browser_pilot": "browser_sensitive",
     }
     task_type_l = task_type.lower().strip()
     if task_type_l in gate_by_task_type:
@@ -742,6 +744,23 @@ def dispatch(
         return "blocked", "readonly_mode_execution_disabled"
 
     if route_class == "UBUNTU_HEAVY":
+        if task_type == "browser_pilot":
+            if dispatch_runtime != "single_node":
+                return "blocked", "browser_pilot_single_node_only"
+            cmd = [
+                str(repo_root() / "infra/browser/wrappers/zbrowser_safe.sh"),
+                "--task-type",
+                task_type,
+                "--prompt",
+                prompt,
+                "--task-id",
+                task_id,
+            ]
+            result = run_command(cmd, task_id, db_path, trace_id)
+            if result.returncode != 0:
+                return "failed", f"browser_pilot_failed: {result.stderr.strip()}"
+            return "succeeded", f"browser_pilot_run task_id={task_id}"
+
         if dispatch_runtime == "single_node":
             cmd = [
                 str(repo_root() / "infra/opencode/wrappers/zrun.sh"),

@@ -19,7 +19,8 @@
       "delete",
       "scheduler_change",
       "compliance_finalize",
-      "customer_outbound"
+      "customer_outbound",
+      "browser_pilot"
     ]
   },
   "deny_rules": {

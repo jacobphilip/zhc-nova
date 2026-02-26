@@ -83,6 +83,8 @@ python3 services/task-router/router.py route \
 - Control invariant tests: `make test-control`
 - Chaos-lite reliability suite: `make chaos-lite`
 - Production-like traffic window: `make prodlike-traffic`
+- Install recurring production-like traffic timer: `make prodlike-timer-install`
+- Rollback validation drill: `make rollback-drill`
 - Command semantics + reliability controls: `docs/TELEGRAM_COMMANDS.md`
 - Live health summary command: `/ops`
 
@@ -139,6 +141,7 @@ Skills adoption notes:
 Pilot note:
 
 - `docs/AGENT_BROWSER_PILOT.md`
+- Browser pilot wrapper (safe default / stub unless enabled): `infra/browser/wrappers/zbrowser_safe.sh`
 
 ## Iteration Audits
 
