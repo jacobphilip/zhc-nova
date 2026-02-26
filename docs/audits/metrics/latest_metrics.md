@@ -1,7 +1,7 @@
 # ZHC-Nova Metrics Report - latest
 
-- Generated: 2026-02-26T03:50:04.148490+00:00
-- Window: 2026-02-19T03:50:04.132845+00:00 -> 2026-02-26T03:50:04.132845+00:00
+- Generated: 2026-02-26T04:00:43.197971+00:00
+- Window: 2026-02-19T04:00:43.182264+00:00 -> 2026-02-26T04:00:43.182264+00:00
 
 ## KPI Summary
 
@@ -11,10 +11,12 @@
 - Review gate: pass_rate=0.8197 pass=50 fail=1 missing=10 schema_complete_rate=0.7869 fail_then_pass=5
 - Telemetry: avg_dispatch_ms=31528.49 total_cost_usd=0.07169 total_tokens=13756
 - Telegram: success_rate=0.8182 error_rate=0.0338 command_success_rate=0.9615 production_command_success_rate=0.9385 production_trace_command_success_rate=1.0 unauthorized=0 poll_errors=4 timeouts=4 synthetic_rows=275
+- Recovery: rate=0.625 mttr_minutes=2.07 p90_recovery_minutes=3.01 incidents=8
 
 ## Top 5 Next Actions
 
 - Tune execution policy allowlists/keywords to reduce unnecessary policy blocks.
 - Enforce complete reviewer checklist schema on all heavy-task reviews.
 - Stabilize Telegram polling loop and restart behavior to reduce poll errors.
+- Improve timeout/poll recovery automation to reach >=95% recovery rate.
 

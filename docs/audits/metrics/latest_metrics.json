@@ -2,9 +2,10 @@
   "actions": [
     "Tune execution policy allowlists/keywords to reduce unnecessary policy blocks.",
     "Enforce complete reviewer checklist schema on all heavy-task reviews.",
-    "Stabilize Telegram polling loop and restart behavior to reduce poll errors."
+    "Stabilize Telegram polling loop and restart behavior to reduce poll errors.",
+    "Improve timeout/poll recovery automation to reach >=95% recovery rate."
   ],
-  "generated_at": "2026-02-26T03:50:04.147898+00:00",
+  "generated_at": "2026-02-26T04:00:43.197290+00:00",
   "iteration": "latest",
   "summary": {
     "approvals": {
@@ -133,6 +134,18 @@
       "command_success_rate": 0.9615,
       "command_timeout_count": 4,
       "error_rate": 0.0338,
+      "incident_recovery": {
+        "mttr_minutes": 2.07,
+        "p90_recovery_minutes": 3.01,
+        "poll_errors_recovered": 1,
+        "poll_errors_total": 4,
+        "recovered_incidents": 5,
+        "recovery_rate": 0.625,
+        "timeouts_recovered": 4,
+        "timeouts_total": 4,
+        "total_incidents": 8,
+        "window_minutes": 10
+      },
       "poll_error_count": 4,
       "production_command_count": 97,
       "production_command_error_rate": 0.0615,
@@ -169,7 +182,7 @@
     }
   },
   "window": {
-    "end": "2026-02-26T03:50:04.132845+00:00",
-    "start": "2026-02-19T03:50:04.132845+00:00"
+    "end": "2026-02-26T04:00:43.182264+00:00",
+    "start": "2026-02-19T04:00:43.182264+00:00"
   }
 }

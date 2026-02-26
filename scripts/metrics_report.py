@@ -336,10 +336,23 @@ def summarize(
     production_trace_command_ok = 0
     production_trace_command_error = 0
     synthetic_count = 0
+    recovery_window_minutes = 10
+
+    timeout_events: list[datetime] = []
+    poll_error_events: list[datetime] = []
+    ok_events: list[datetime] = []
 
     for row in telegram_rows:
         status = str(row.get("status", "unknown"))
         telegram_status_counts[status] = telegram_status_counts.get(status, 0) + 1
+        ts = parse_ts(str(row.get("ts", "")))
+        if ts:
+            if status == "ok":
+                ok_events.append(ts)
+            elif status == "command_timeout":
+                timeout_events.append(ts)
+            elif status == "poll_error":
+                poll_error_events.append(ts)
         text = str(row.get("text", "")).strip()
         synthetic = is_synthetic_telegram_row(row)
         if synthetic:
@@ -401,6 +414,46 @@ def summarize(
     telegram_timeout = telegram_status_counts.get("command_timeout", 0)
     poll_error_count = telegram_status_counts.get("poll_error", 0)
     telegram_ok = telegram_status_counts.get("ok", 0)
+    ok_events.sort()
+
+    def incident_recovery(incidents: list[datetime]) -> tuple[int, int, list[float]]:
+        recovered = 0
+        latencies: list[float] = []
+        for incident_ts in incidents:
+            recovery_ts: datetime | None = None
+            for ok_ts in ok_events:
+                if ok_ts > incident_ts:
+                    delta_m = (ok_ts - incident_ts).total_seconds() / 60.0
+                    if delta_m <= recovery_window_minutes:
+                        recovery_ts = ok_ts
+                    break
+            if recovery_ts is not None:
+                recovered += 1
+                latencies.append((recovery_ts - incident_ts).total_seconds() / 60.0)
+        return len(incidents), recovered, latencies
+
+    timeout_total, timeout_recovered, timeout_latencies = incident_recovery(
+        timeout_events
+    )
+    poll_total, poll_recovered, poll_latencies = incident_recovery(poll_error_events)
+
+    all_recovery_latencies = timeout_latencies + poll_latencies
+    total_incidents = timeout_total + poll_total
+    recovered_incidents = timeout_recovered + poll_recovered
+
+    mttr_minutes = (
+        round(sum(all_recovery_latencies) / len(all_recovery_latencies), 2)
+        if all_recovery_latencies
+        else 0
+    )
+    p90_recovery_minutes = (
+        round(percentile(all_recovery_latencies, 0.90), 2)
+        if all_recovery_latencies
+        else 0
+    )
+    recovery_rate = (
+        round(recovered_incidents / total_incidents, 4) if total_incidents else 1.0
+    )
 
     return {
         "task_flow": {
@@ -514,6 +567,18 @@ def summarize(
             "unauthorized_count": telegram_status_counts.get("unauthorized", 0),
             "poll_error_count": poll_error_count,
             "command_timeout_count": telegram_timeout,
+            "incident_recovery": {
+                "window_minutes": recovery_window_minutes,
+                "total_incidents": total_incidents,
+                "recovered_incidents": recovered_incidents,
+                "recovery_rate": recovery_rate,
+                "mttr_minutes": mttr_minutes,
+                "p90_recovery_minutes": p90_recovery_minutes,
+                "timeouts_total": timeout_total,
+                "timeouts_recovered": timeout_recovered,
+                "poll_errors_total": poll_total,
+                "poll_errors_recovered": poll_recovered,
+            },
         },
     }
 
@@ -545,6 +610,12 @@ def recommendations(summary: dict[str, Any]) -> list[str]:
     if int(summary["telegram"]["poll_error_count"]) > 0:
         out.append(
             "Stabilize Telegram polling loop and restart behavior to reduce poll errors."
+        )
+
+    recovery_rate = float(summary["telegram"]["incident_recovery"]["recovery_rate"])
+    if recovery_rate < 0.95:
+        out.append(
+            "Improve timeout/poll recovery automation to reach >=95% recovery rate."
         )
 
     openrouter_count = int(
@@ -617,6 +688,13 @@ def render_markdown(
         f"production_trace_command_success_rate={telegram['production_trace_command_success_rate']} "
         f"unauthorized={telegram['unauthorized_count']} poll_errors={telegram['poll_error_count']} "
         f"timeouts={telegram['command_timeout_count']} synthetic_rows={telegram['synthetic_row_count']}"
+    )
+    recovery = telegram["incident_recovery"]
+    lines.append(
+        "- Recovery: "
+        f"rate={recovery['recovery_rate']} mttr_minutes={recovery['mttr_minutes']} "
+        f"p90_recovery_minutes={recovery['p90_recovery_minutes']} "
+        f"incidents={recovery['total_incidents']}"
     )
     lines.append("")
 
