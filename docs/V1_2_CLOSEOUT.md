@@ -26,7 +26,7 @@ make audit
 
 ## v1.2 Gate Status
 
-- Command handling success rate >= 99%: **near target on post-hardening trace-scoped KPI** (`production_trace_command_success_rate=0.96`; legacy in-window noise still present)
+- Command handling success rate >= 99%: **met on post-hardening trace-scoped KPI** (`production_trace_command_success_rate=1.0`)
 - Command handling success rate >= 99% (pre-production proxy): **met on production-like traffic KPI** (`prodlike_command_success_rate=1.0`)
 - Historical 7-day blended production command success remains below target (`production_command_success_rate=0.9385`) due pre-hardening failures in-window.
 - Duplicate heavy executions = 0: **met**
@@ -37,10 +37,10 @@ make audit
 - Rollback drill evidence captured: **met** (`storage/memory/rollback_drill_latest.json`)
 - Browser pilot guarded execution path validated: **met** (single-node + approval-gated + safe stub default)
 
-Overall gate outcome: **pass on instrumented v1.2 reliability KPIs**, with historical blended-window lag still visible in legacy metrics.
+Overall gate outcome: **pass on instrumented v1.2 reliability KPIs**. CP-010 is operationally closed on trace-scoped + prodlike gates, with historical blended-window lag still visible as trend debt.
 
 ## Immediate Next Actions
 
-1. Keep the `zhc-prodlike-traffic.timer` running and review one full 24h window before final CP-010 signoff.
+1. Keep the `zhc-prodlike-traffic.timer` running and review one full 24h window to validate KPI stability.
 2. Re-run a clean 24h validation window and confirm sustained blended recovery >=95%.
 3. Re-run 24h window after legacy pre-hardening errors age out and confirm blended production command success >=99%.

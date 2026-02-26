@@ -179,6 +179,7 @@ def scenario_duplicate_update_replay(base_uid: int) -> dict[str, Any]:
     update_id = base_uid + 1
     update = {
         "update_id": update_id,
+        "traffic_class": "synthetic_test",
         "message": {
             "chat": {"id": chat_id},
             "from": {"id": chat_id, "username": "chaos_replay"},
@@ -321,6 +322,7 @@ def scenario_success_then_reporting_failure(base_uid: int) -> dict[str, Any]:
     update_id = base_uid + 2
     update = {
         "update_id": update_id,
+        "traffic_class": "synthetic_test",
         "message": {
             "chat": {"id": chat_id},
             "from": {"id": chat_id, "username": "chaos_report"},

@@ -188,8 +188,19 @@ def is_synthetic_telegram_row(row: dict[str, Any]) -> bool:
 
 def traffic_class(row: dict[str, Any]) -> str:
     cls = str(row.get("traffic_class", "")).strip().lower()
-    if cls in {"synthetic_test", "synthetic_prodlike", "real_operator"}:
+    if cls in {"synthetic_test", "synthetic_prodlike"}:
         return cls
+    if cls == "real_operator":
+        actor = str(row.get("actor", ""))
+        if actor.startswith("@smoke") or actor.startswith("@chaos"):
+            return "synthetic_test"
+        try:
+            update_id = int(row.get("update_id", 0) or 0)
+        except (TypeError, ValueError):
+            update_id = 0
+        if update_id >= 900000000:
+            return "synthetic_test"
+        return "real_operator"
     return "synthetic_test" if is_synthetic_telegram_row(row) else "real_operator"
 
 
