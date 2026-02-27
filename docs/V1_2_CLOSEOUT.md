@@ -2,6 +2,13 @@
 
 Generated after running the full gate bundle on 2026-02-26.
 
+Latest rolling KPI refresh (timer-backed) at `2026-02-26T15:33:44Z`:
+
+- `prodlike_command_success_rate=1.0`
+- `production_trace_command_success_rate=1.0`
+- `production_command_success_rate=0.9385` (historical blended lag)
+- `instrumented_recovery_rate=1.0`, `mttr_minutes=1.07`
+
 ## Gate Commands Executed
 
 ```bash
